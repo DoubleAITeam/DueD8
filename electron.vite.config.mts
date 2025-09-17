@@ -39,6 +39,11 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    resolve: {
+      alias: {
+        'react-router-dom': resolve(__dirname, 'src/lib/react-router-dom.tsx')
+      }
+    },
     build: {
       outDir: out('out/renderer'),
       rollupOptions: { input: 'src/renderer/index.html' }
