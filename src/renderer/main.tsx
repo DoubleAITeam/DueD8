@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { rendererError, rendererLog } from '../lib/logger';
+import { getPlatformBridge } from '../lib/platformBridge';
 import ConnectCanvas from './pages/ConnectCanvas';
 import Dashboard from './pages/Dashboard';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
+
+const platformBridge = getPlatformBridge();
+// PHASE 1: Load the refreshed font stack and palette for the renderer.
+import './styles/global.css';
 
 function Toast() {
   const toast = useStore((s) => s.toast);
@@ -49,7 +54,7 @@ function Root() {
 
     async function bootstrap() {
       try {
-        const tokenResult = await window.dued8.canvas.getToken();
+        const tokenResult = await platformBridge.canvas.getToken();
         if (!tokenResult.ok) {
           rendererError('Failed to read stored token', tokenResult.error);
           return;
@@ -59,7 +64,7 @@ function Root() {
           return;
         }
 
-        const validation = await window.dued8.canvas.testToken();
+        const validation = await platformBridge.canvas.testToken();
         if (validation.ok) {
           rendererLog('Stored token validated on startup');
           const profile = (validation.data.profile ?? null) as Profile | null;
@@ -67,8 +72,8 @@ function Root() {
           setConnected(true);
         } else {
           rendererError('Stored token invalid', validation.status ?? 'unknown');
-          await window.dued8.canvas.clearToken();
-          setToast('Stored Canvas token is invalid. Please reconnect.');
+          await platformBridge.canvas.clearToken();
+          setToast('Stored Canvas token expired. Reconnect using the help guide.');
         }
       } catch (error) {
         rendererError('Bootstrap token check failed', error);

@@ -152,13 +152,14 @@ export async function clearToken(): Promise<void> {
 /**
  * Validate the stored token by requesting the Canvas profile endpoint.
  */
-export async function validateToken(): Promise<{ ok: boolean; status: number; profile?: unknown }> {
+export async function validateToken(): Promise<{ ok: boolean; status: number; profile?: unknown; error?: string }> {
   const token = await getToken();
   if (!token) {
-    return { ok: false, status: 0 };
+    return { ok: false, status: 0, error: 'missing-token' };
   }
 
   let lastStatus = 0;
+  let lastError = 'Unknown error';
   for (const host of HOSTS) {
     try {
       const response = await fetch(`${host}/api/v1/users/self/profile`, {
@@ -173,18 +174,25 @@ export async function validateToken(): Promise<{ ok: boolean; status: number; pr
         return { ok: true, status: response.status, profile };
       }
       lastStatus = response.status;
+      lastError = `${response.status} ${response.statusText}`;
+      if (response.status === 401) {
+        return { ok: false, status: response.status, error: 'unauthorized' };
+      }
     } catch (error) {
-      mainError('validateToken request failed for host', host, (error as Error).message);
-      lastStatus = 0;
+      const message = (error as Error).message;
+      mainError('validateToken request failed for host', host, message);
+      lastError = message;
     }
   }
 
-  return { ok: false, status: lastStatus };
+  return { ok: false, status: lastStatus, error: lastError };
 }
+
+type CanvasQueryValue = string | number | boolean | Array<string | number | boolean>;
 
 export type CanvasGetPayload = {
   path: string;
-  query?: Record<string, string | number | boolean>;
+  query?: Record<string, CanvasQueryValue>;
 };
 
 /**
@@ -202,7 +210,11 @@ export async function fetchCanvasJson(
   const qs = new URLSearchParams();
   if (query) {
     for (const [key, value] of Object.entries(query)) {
-      qs.append(key, String(value));
+      if (Array.isArray(value)) {
+        value.forEach((item) => qs.append(key, String(item)));
+      } else {
+        qs.append(key, String(value));
+      }
     }
   }
   const queryString = qs.toString();

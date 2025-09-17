@@ -1,9 +1,25 @@
 import type { IpcResult } from '../shared/ipc';
+import { getPlatformBridge } from './platformBridge';
+
+export type CourseEnrollment = {
+  computed_current_grade?: string | null;
+  computed_current_score?: number | null;
+  computed_final_grade?: string | null;
+  computed_final_score?: number | null;
+  grades?: {
+    current_grade?: string | null;
+    current_score?: number | null;
+    final_grade?: string | null;
+    final_score?: number | null;
+  };
+};
 
 export type Course = {
   id: number;
   name: string;
   course_code?: string;
+  syllabus_body?: string | null;
+  enrollments?: CourseEnrollment[];
 };
 
 export type Assignment = {
@@ -23,8 +39,10 @@ export type CalendarEvent = {
   html_url?: string;
 };
 
-function canvasGet(payload: { path: string; query?: Record<string, string | number | boolean> }) {
-  return window.dued8.canvas.get(payload) as Promise<IpcResult<unknown>>;
+type CanvasQueryValue = string | number | boolean | Array<string | number | boolean>;
+
+function canvasGet(payload: { path: string; query?: Record<string, CanvasQueryValue> }) {
+  return getPlatformBridge().canvas.get(payload) as Promise<IpcResult<unknown>>;
 }
 
 /**
@@ -38,7 +56,14 @@ export async function getUserProfile() {
  * Fetch the list of active Canvas courses for the current user.
  */
 export async function getCourses() {
-  return canvasGet({ path: '/api/v1/courses', query: { enrollment_state: 'active' } }) as Promise<IpcResult<Course[]>>;
+  return canvasGet({
+    path: '/api/v1/courses',
+    query: {
+      enrollment_state: 'active',
+      // PHASE 4: Retrieve syllabus and score metadata for grade display.
+      'include[]': ['syllabus_body', 'total_scores', 'current_grading_period_scores', 'enrollments']
+    }
+  }) as Promise<IpcResult<Course[]>>;
 }
 
 /**

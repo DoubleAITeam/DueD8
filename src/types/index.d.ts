@@ -11,7 +11,12 @@ declare global {
         getToken(): Promise<IpcResult<string | null>>;
         clearToken(): Promise<IpcResult<null>>;
         testToken(): Promise<IpcResult<{ profile?: unknown }>>;
-        get(payload: { path: string; query?: Record<string, string | number | boolean> }): Promise<IpcResult<unknown>>;
+        get(
+          payload: {
+            path: string;
+            query?: Record<string, string | number | boolean | Array<string | number | boolean>>;
+          }
+        ): Promise<IpcResult<unknown>>;
       };
       students: {
         add(s: { first_name: string; last_name: string; county: 'Fairfax' | 'Sci-Tech' }): Promise<{ id: number }>;
@@ -23,6 +28,18 @@ declare global {
       attendance: {
         set(student_id: number, event_id: number, status: 'Present' | 'Absent' | 'NO AMP'): Promise<boolean>;
       };
+      files: {
+        processUploads(
+          files: Array<{ path: string; name: string; type?: string }>
+        ): Promise<IpcResult<Array<{ fileName: string; content: string }>>>;
+      };
     };
+  }
+
+  interface File {
+    /**
+     * PHASE 2: Electron augments File with an absolute path that the main process can read.
+     */
+    path?: string;
   }
 }

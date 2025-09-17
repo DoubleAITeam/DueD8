@@ -6,6 +6,7 @@ import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from '
 import type { CanvasGetPayload } from './canvasService';
 import type { IpcResult } from '../src/shared/ipc';
 import { mainError, mainLog } from './logger';
+import { processAssignmentUploads, type ProcessedFile } from './fileProcessing';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -56,7 +57,14 @@ ipcMain.handle('canvas:testToken', async (): Promise<IpcResult<{ profile?: unkno
     if (result.ok) {
       return success({ profile: result.profile });
     }
-    return failure('Token validation failed', result.status);
+    const message =
+      result.error === 'unauthorized'
+        ? 'Canvas rejected the token. Please create a new one.'
+        : result.error === 'missing-token'
+          ? 'No Canvas token stored.'
+          : 'Token validation failed';
+    // PHASE 5: Surface specific error messaging so the renderer can prompt a refresh.
+    return failure(message, result.status);
   } catch (error) {
     mainError('canvas:testToken unexpected error', (error as Error).message);
     return failure('Token validation error');
@@ -76,6 +84,24 @@ ipcMain.handle('canvas:get', async (_event, payload: CanvasGetPayload): Promise<
   } catch (error) {
     mainError('canvas:get unexpected error', (error as Error).message);
     return failure('Canvas request error');
+  }
+});
+
+const FileDescriptorSchema = z.object({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string().optional()
+});
+
+ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
+  try {
+    const files = z.array(FileDescriptorSchema).parse(payload);
+    // PHASE 2: Delegate heavy lifting to Node so the renderer stays sandboxed.
+    const processed = await processAssignmentUploads(files);
+    return success(processed);
+  } catch (error) {
+    mainError('files:processUploads failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to process uploads');
   }
 });
 

@@ -1,0 +1,33 @@
+/* PHASE 1: Introduce Inter font and establish minimalist Apple-inspired foundation. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* PHASE 1: Define neutral greys inspired by Apple UI for reuse. */
+  --surface-background: #f5f5f7;
+  --surface-card: #ffffff;
+  --surface-border: rgba(0, 0, 0, 0.08);
+  --text-primary: #1f2933;
+  --text-secondary: #6c757d;
+  --accent: #0a84ff;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-background);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
