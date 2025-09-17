@@ -6,10 +6,13 @@ console.log('[preload] loaded');
 contextBridge.exposeInMainWorld('dued8', {
   ping: () => ipcRenderer.invoke('ping'),
 
-  token: {
-    save: (token: string) => ipcRenderer.invoke('token.save', token),
-    get: () => ipcRenderer.invoke('token.get'),
-    info: () => ipcRenderer.invoke('token.info')
+  canvas: {
+    setToken: (token: string) => ipcRenderer.invoke('canvas:setToken', token),
+    getToken: () => ipcRenderer.invoke('canvas:getToken'),
+    clearToken: () => ipcRenderer.invoke('canvas:clearToken'),
+    testToken: () => ipcRenderer.invoke('canvas:testToken'),
+    get: (payload: { path: string; query?: Record<string, string | number | boolean> }) =>
+      ipcRenderer.invoke('canvas:get', payload)
   },
 
   students: {
@@ -26,8 +29,5 @@ contextBridge.exposeInMainWorld('dued8', {
   attendance: {
     set: (student_id: number, event_id: number, status: 'Present'|'Absent'|'NO AMP') =>
       ipcRenderer.invoke('attendance.set', student_id, event_id, status)
-  },
-  canvas: {
-    testToken: () => ipcRenderer.invoke('canvas.testToken')
   }
 });

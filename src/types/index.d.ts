@@ -1,14 +1,17 @@
-
+import type { IpcResult } from '../shared/ipc';
 
 export {};
 
 declare global {
   interface Window {
     dued8: {
-      token: {
-        save(token: string): Promise<boolean>;
-        get(): Promise<string | null>;
-        info(): Promise<{ length: number; startsWith: string } | null>;
+      ping(): Promise<string>;
+      canvas: {
+        setToken(token: string): Promise<IpcResult<null>>;
+        getToken(): Promise<IpcResult<string | null>>;
+        clearToken(): Promise<IpcResult<null>>;
+        testToken(): Promise<IpcResult<{ profile?: unknown }>>;
+        get(payload: { path: string; query?: Record<string, string | number | boolean> }): Promise<IpcResult<unknown>>;
       };
       students: {
         add(s: { first_name: string; last_name: string; county: 'Fairfax' | 'Sci-Tech' }): Promise<{ id: number }>;
@@ -19,9 +22,6 @@ declare global {
       };
       attendance: {
         set(student_id: number, event_id: number, status: 'Present' | 'Absent' | 'NO AMP'): Promise<boolean>;
-      };
-      canvas: {
-        testToken(): Promise<any>;
       };
     };
   }

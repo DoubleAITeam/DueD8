@@ -1,84 +1,82 @@
 // src/main/ipc.ts
-import fs from 'node:fs';
-import path from 'node:path';
-import { app, ipcMain } from 'electron';
-const fetch = globalThis.fetch;
+import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { getDb } from './db';
+import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from './canvasService';
+import type { CanvasGetPayload } from './canvasService';
+import type { IpcResult } from '../src/shared/ipc';
+import { mainError, mainLog } from './logger';
+
 ipcMain.handle('ping', () => 'pong');
 
-
-const SERVICE = 'DueD8'; // keychain service name
-
-const TOKEN_FILE = path.join(app.getPath('userData'), 'token.json');
-
-function saveTokenToFile(token: string) {
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token }), 'utf-8');
-}
-
-function readTokenFromFile(): string | null {
-  if (!fs.existsSync(TOKEN_FILE)) return null;
-  try {
-    const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
-    return typeof data.token === 'string' ? data.token : null;
-  } catch {
-    return null;
-  }
-}
-
-ipcMain.handle('canvas.testToken', async () => {
-  const token = readTokenFromFile();
-  if (!token) throw new Error('No token saved');
-
-  const hosts = ['https://canvas.gmu.edu', 'https://gmu.instructure.com'];
-  const errors: Array<{ host: string; status?: number; statusText?: string }> = [];
-
-  for (const host of hosts) {
-    try {
-      const resp = await fetch(`${host}/api/v1/users/self`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json'
-        },
-        redirect: 'manual'
-      } as RequestInit);
-      if (resp.ok) {
-        const profile = await resp.json();
-        return { host, profile };
-      }
-      errors.push({ host, status: resp.status, statusText: resp.statusText });
-    } catch (e) {
-      errors.push({ host, statusText: (e as Error).message });
-    }
-  }
-
-  throw new Error(
-    `Canvas error: all hosts failed: ${errors.map(e => `${e.host} -> ${e.status ?? ''} ${e.statusText ?? ''}` ).join(' | ')}`
-  );
-});
-
-// Schemas
 const StudentSchema = z.object({
   first_name: z.string().min(1),
   last_name: z.string().min(1),
-  county: z.enum(['Fairfax','Sci-Tech'])
+  county: z.enum(['Fairfax', 'Sci-Tech'])
 });
 
-ipcMain.handle('token.save', async (_e, token: string) => {
-  if (!token || typeof token !== 'string') throw new Error('Invalid token');
-  const cleaned = token.trim();
-  if (!cleaned) throw new Error('Empty token');
-  saveTokenToFile(cleaned);
-  return true;
+const success = <T>(data: T): IpcResult<T> => ({ ok: true, data });
+const failure = (error: string, status?: number): IpcResult<never> =>
+  status === undefined ? { ok: false, error } : { ok: false, error, status };
+
+ipcMain.handle('canvas:setToken', async (_event, token: string): Promise<IpcResult<null>> => {
+  try {
+    await setToken(token);
+    return success(null);
+  } catch (error) {
+    mainError('canvas:setToken failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to save token');
+  }
 });
 
-ipcMain.handle('token.get', async () => {
-  return readTokenFromFile();
+ipcMain.handle('canvas:getToken', async (): Promise<IpcResult<string | null>> => {
+  try {
+    const token = await getToken();
+    mainLog('canvas:getToken resolved with token present:', Boolean(token));
+    return success(token);
+  } catch (error) {
+    mainError('canvas:getToken failed', (error as Error).message);
+    return failure('Failed to read token');
+  }
 });
 
-ipcMain.handle('token.info', async () => {
-  const t = readTokenFromFile();
-  return t ? { length: t.length, startsWith: t.slice(0, 6) } : null;
+ipcMain.handle('canvas:clearToken', async (): Promise<IpcResult<null>> => {
+  try {
+    await clearToken();
+    return success(null);
+  } catch (error) {
+    mainError('canvas:clearToken failed', (error as Error).message);
+    return failure('Failed to clear token');
+  }
+});
+
+ipcMain.handle('canvas:testToken', async (): Promise<IpcResult<{ profile?: unknown }>> => {
+  try {
+    const result = await validateToken();
+    if (result.ok) {
+      return success({ profile: result.profile });
+    }
+    return failure('Token validation failed', result.status);
+  } catch (error) {
+    mainError('canvas:testToken unexpected error', (error as Error).message);
+    return failure('Token validation error');
+  }
+});
+
+ipcMain.handle('canvas:get', async (_event, payload: CanvasGetPayload): Promise<IpcResult<unknown>> => {
+  try {
+    if (!payload || typeof payload.path !== 'string') {
+      return failure('Invalid Canvas request payload');
+    }
+    const result = await fetchCanvasJson(payload);
+    if (result.ok) {
+      return success(result.data ?? null);
+    }
+    return failure(result.error || 'Canvas request failed', result.status);
+  } catch (error) {
+    mainError('canvas:get unexpected error', (error as Error).message);
+    return failure('Canvas request error');
+  }
 });
 
 ipcMain.handle('students.add', (_e, payload) => {
