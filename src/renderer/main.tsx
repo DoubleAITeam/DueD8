@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { rendererError, rendererLog } from '../lib/logger';
 import ConnectCanvas from './pages/ConnectCanvas';
 import Dashboard from './pages/Dashboard';
+import ChatbotHost from './components/ChatbotHost';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
 
@@ -109,6 +110,7 @@ function Root() {
     <>
       {connected ? <Dashboard /> : <ConnectCanvas />}
       <Toast />
+      <ChatbotHost />
     </>
   );
 }

@@ -23,6 +23,7 @@ export default function Dashboard() {
   const setConnected = useStore((s) => s.setConnected);
   const setProfile = useStore((s) => s.setProfile);
   const setToast = useStore((s) => s.setToast);
+  const receiveChatMessage = useStore((s) => s.receiveChatMessage);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -186,6 +187,26 @@ export default function Dashboard() {
           >
             Canvas status: Connected
           </span>
+          <button
+            type="button"
+            onClick={() =>
+              receiveChatMessage(
+                'Need help staying on track? Minimize the assistant to see unread alerts here.'
+              )
+            }
+            style={{
+              background: '#e2e8f0',
+              color: '#0f172a',
+              border: '1px solid #cbd5f5',
+              padding: '8px 16px',
+              borderRadius: 999,
+              cursor: 'pointer',
+              fontSize: 14,
+              boxShadow: '0 8px 16px rgba(15, 23, 42, 0.08)'
+            }}
+          >
+            Simulate chat ping
+          </button>
           <button
             type="button"
             onClick={handleDisconnect}
