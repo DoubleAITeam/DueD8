@@ -23,6 +23,8 @@ export default function Dashboard() {
   const setConnected = useStore((s) => s.setConnected);
   const setProfile = useStore((s) => s.setProfile);
   const setToast = useStore((s) => s.setToast);
+  const navigateToCourse = useStore((s) => s.navigateToCourse);
+  const navigateToDashboard = useStore((s) => s.navigateToDashboard);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -163,6 +165,7 @@ export default function Dashboard() {
     setAssignments([]);
     setEvents([]);
     setToast('Disconnected from Canvas.');
+    navigateToDashboard();
   }
 
   return (
@@ -222,7 +225,7 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gap: 24, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <section style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)' }}>
           <h2 style={{ marginTop: 0 }}>Active Courses</h2>
-          <CoursesGrid courses={courses} loading={loadingCourses} />
+          <CoursesGrid courses={courses} loading={loadingCourses} onSelect={navigateToCourse} />
         </section>
         <section style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)' }}>
           <h2 style={{ marginTop: 0 }}>Upcoming Assignments</h2>

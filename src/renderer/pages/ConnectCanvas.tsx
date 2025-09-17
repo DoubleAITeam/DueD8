@@ -9,6 +9,7 @@ export default function ConnectCanvas() {
   const setConnected = useStore((s) => s.setConnected);
   const setProfile = useStore((s) => s.setProfile);
   const setToast = useStore((s) => s.setToast);
+  const navigateToDashboard = useStore((s) => s.navigateToDashboard);
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +33,13 @@ export default function ConnectCanvas() {
       }
 
       const validation = await dued8.canvas.testToken();
-      if (validation.ok) {
-        rendererLog('Canvas token validated successfully');
-        const profile = (validation.data.profile ?? null) as Profile | null;
-        setProfile(profile);
-        setConnected(true);
-        setToast('Canvas connected');
+        if (validation.ok) {
+          rendererLog('Canvas token validated successfully');
+          const profile = (validation.data.profile ?? null) as Profile | null;
+          setProfile(profile);
+          setConnected(true);
+          setToast('Canvas connected');
+          navigateToDashboard();
       } else {
         const status = validation.status ?? 'unknown';
         const message = `Canvas rejected the token (status ${status}).`;

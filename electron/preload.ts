@@ -29,5 +29,14 @@ contextBridge.exposeInMainWorld('dued8', {
   attendance: {
     set: (student_id: number, event_id: number, status: 'Present'|'Absent'|'NO AMP') =>
       ipcRenderer.invoke('attendance.set', student_id, event_id, status)
+  },
+
+  files: {
+    processAssignmentFiles: (payload: {
+      assignmentId: number;
+      courseId: number;
+      files: Array<{ path: string; name: string }>;
+    }) => ipcRenderer.invoke('files:processAssignment', payload),
+    getAssignmentDetails: (assignmentId: number) => ipcRenderer.invoke('files:getAssignmentDetails', assignmentId)
   }
 });

@@ -6,6 +6,7 @@ import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from '
 import type { CanvasGetPayload } from './canvasService';
 import type { IpcResult } from '../src/shared/ipc';
 import { mainError, mainLog } from './logger';
+import { getAssignmentDetails, processAssignmentFiles, ProcessPayloadSchema } from './filePipeline';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -119,4 +120,32 @@ ipcMain.handle('attendance.set', (_e, student_id: number, event_id: number, stat
     ON CONFLICT(student_id, event_id) DO UPDATE SET status=excluded.status
   `).run(student_id, event_id, status);
   return true;
+});
+
+ipcMain.handle('files:processAssignment', async (_event, rawPayload): Promise<IpcResult<unknown>> => {
+  try {
+    const payload = ProcessPayloadSchema.parse(rawPayload);
+    const record = await processAssignmentFiles(payload);
+    return success(record);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      mainError('files:processAssignment validation failed', error.message);
+      return failure('Invalid file payload');
+    }
+    mainError('files:processAssignment error', (error as Error).message);
+    return failure('Failed to process files');
+  }
+});
+
+ipcMain.handle('files:getAssignmentDetails', async (_event, assignmentId: unknown): Promise<IpcResult<unknown>> => {
+  try {
+    if (typeof assignmentId !== 'number' || Number.isNaN(assignmentId)) {
+      return failure('Assignment id must be a number');
+    }
+    const details = await getAssignmentDetails(assignmentId);
+    return success(details);
+  } catch (error) {
+    mainError('files:getAssignmentDetails error', (error as Error).message);
+    return failure('Failed to read assignment details');
+  }
 });

@@ -23,6 +23,14 @@ declare global {
       attendance: {
         set(student_id: number, event_id: number, status: 'Present' | 'Absent' | 'NO AMP'): Promise<boolean>;
       };
+      files: {
+        processAssignmentFiles(payload: {
+          assignmentId: number;
+          courseId: number;
+          files: Array<{ path: string; name: string }>;
+        }): Promise<IpcResult<import('../shared/types').AssignmentDetail>>;
+        getAssignmentDetails(assignmentId: number): Promise<IpcResult<import('../shared/types').AssignmentDetail | null>>;
+      };
     };
   }
 }

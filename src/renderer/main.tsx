@@ -3,12 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { rendererError, rendererLog } from '../lib/logger';
 import ConnectCanvas from './pages/ConnectCanvas';
 import Dashboard from './pages/Dashboard';
+import Course from './pages/Course';
+import Assignment from './pages/Assignment';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
 
 function Toast() {
   const toast = useStore((s) => s.toast);
   const setToast = useStore((s) => s.setToast);
+  const navigateToDashboard = useStore((s) => s.navigateToDashboard);
+  const view = useStore((s) => s.view);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -105,9 +109,29 @@ function Root() {
     );
   }
 
+  useEffect(() => {
+    if (!connected) {
+      navigateToDashboard();
+    }
+  }, [connected, navigateToDashboard]);
+
+  const content = connected
+    ? (() => {
+        switch (view.name) {
+          case 'course':
+            return <Course />;
+          case 'assignment':
+            return <Assignment />;
+          case 'dashboard':
+          default:
+            return <Dashboard />;
+        }
+      })()
+    : <ConnectCanvas />;
+
   return (
     <>
-      {connected ? <Dashboard /> : <ConnectCanvas />}
+      {content}
       <Toast />
     </>
   );
