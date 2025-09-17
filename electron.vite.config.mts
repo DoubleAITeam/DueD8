@@ -9,13 +9,17 @@ export default defineConfig({
     build: {
       outDir: out('dist-electron'),
       emptyOutDir: true,
+      commonjsOptions: {
+        ignoreDynamicRequires: true,
+      },
       rollupOptions: {
         input: resolve(__dirname, 'electron/main.ts'),
         output: {
           dir: out('dist-electron'),
           entryFileNames: 'main.js',
           format: 'cjs'
-        }
+        },
+        external: ['better-sqlite3'],
       }
     }
   },
@@ -38,6 +42,9 @@ export default defineConfig({
     build: {
       outDir: out('out/renderer'),
       rollupOptions: { input: 'src/renderer/index.html' }
+    },
+    optimizeDeps: {
+      exclude: ['better-sqlite3'],
     }
-  }
+  },
 })

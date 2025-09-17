@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { ipcMain } from "electron";
+import './ipc';
 ipcMain.handle("app:getVersion", () => app.getVersion());
 
 console.log('[main] starting. electron:', process.versions.electron, 'devUrl:', process.env.VITE_DEV_SERVER_URL)
@@ -27,6 +28,7 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js')
     }
   })
@@ -45,6 +47,17 @@ async function createWindow() {
     if (!app.isPackaged) {
       win.webContents.openDevTools({ mode: 'detach' })
     }
+    // Probe that preload ran and window.dued8 is exposed
+    win.webContents.executeJavaScript(`
+      (async () => {
+        const t = typeof window.dued8;
+        console.log('[renderer probe] typeof window.dued8 =', t);
+        if (t === 'object' && window.dued8.ping) {
+          const pong = await window.dued8.ping();
+          console.log('[renderer probe] ping =>', pong);
+        }
+      })();
+    `);
   })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
