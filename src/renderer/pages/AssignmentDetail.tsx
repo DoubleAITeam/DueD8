@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
+import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
-const GUIDE_MODEL = 'gpt-4o-mini';
+const STUDY_COACH_LABEL = 'Study Coach';
 
 type GuideContent = {
   explanation: string;
@@ -82,6 +83,10 @@ function buildReasoningTrace(entries: AssignmentContextEntry[]) {
   return steps.join('\n');
 }
 
+function safeDownloadName(input: string) {
+  return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
+}
+
 type Props = {
   assignment: Assignment | null;
   courseName?: string;
@@ -96,6 +101,8 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   );
   const setToast = useStore((s) => s.setToast);
   const inputRef = useRef<HTMLInputElement>(null);
+  const solutionUrlRef = useRef<string | null>(null);
+  const lastContextSignatureRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -105,6 +112,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const [guideExpanded, setGuideExpanded] = useState(false);
   const [guideStatus, setGuideStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [guideContent, setGuideContent] = useState<GuideContent | null>(null);
+  const [solutionStatus, setSolutionStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle');
+  const [solutionError, setSolutionError] = useState<string | null>(null);
+  const [solutionFile, setSolutionFile] = useState<
+    { url: string; fileName: string; mimeType: string } | null
+  >(null);
 
   const dueText = useMemo(() => {
     if (!assignment?.due_at) {
@@ -126,13 +138,37 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     () => [...instructorContexts, ...userContexts],
     [instructorContexts, userContexts]
   );
+  const hasGuideContext = combinedContexts.length > 0;
+
+  useEffect(() => {
+    return () => {
+      if (solutionUrlRef.current) {
+        URL.revokeObjectURL(solutionUrlRef.current);
+        solutionUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setInstructorError(null);
     setInstructorLoading(false);
     setGuideContent(null);
     setGuideStatus('idle');
+    setSolutionStatus('idle');
+    setSolutionError(null);
+    if (solutionUrlRef.current) {
+      URL.revokeObjectURL(solutionUrlRef.current);
+      solutionUrlRef.current = null;
+    }
+    setSolutionFile(null);
+    lastContextSignatureRef.current = null;
   }, [assignment?.id]);
+
+  useEffect(() => {
+    if (!hasGuideContext) {
+      setGuideExpanded(false);
+    }
+  }, [hasGuideContext]);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,8 +213,128 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     };
   }, [assignment, hasInstructorContext, appendAssignmentContext]);
 
+  useEffect(() => {
+    if (!assignment || !hasGuideContext) {
+      if (solutionUrlRef.current) {
+        URL.revokeObjectURL(solutionUrlRef.current);
+        solutionUrlRef.current = null;
+      }
+      setSolutionStatus('idle');
+      setSolutionError(null);
+      setSolutionFile(null);
+      lastContextSignatureRef.current = null;
+      setGuideContent(null);
+      setGuideStatus('idle');
+      return;
+    }
+
+    const signature = combinedContexts
+      .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
+      .join('|');
+
+    if (!signature.length) {
+      return;
+    }
+
+    if (lastContextSignatureRef.current === signature) {
+      if (
+        solutionStatus === 'ready' ||
+        solutionStatus === 'generating' ||
+        solutionStatus === 'error'
+      ) {
+        return;
+      }
+    }
+
+    let cancelled = false;
+    setSolutionStatus('generating');
+    setSolutionError(null);
+    if (lastContextSignatureRef.current !== signature) {
+      setGuideContent(null);
+      setGuideStatus('idle');
+    }
+    lastContextSignatureRef.current = signature;
+
+    const determineExtension = () => {
+      const searchOrder = [userContexts, instructorContexts, combinedContexts];
+      for (const list of searchOrder) {
+        for (const entry of list) {
+          const ext = entry.fileName.split('.').pop()?.toLowerCase();
+          if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
+            return { extension: ext as 'pdf' | 'docx' | 'txt', originalName: entry.fileName };
+          }
+        }
+      }
+      const fallbackName = `${assignment.name ?? 'assignment'}.txt`;
+      return { extension: 'txt' as const, originalName: fallbackName };
+    };
+
+    const { extension, originalName } = determineExtension();
+
+    const generate = async () => {
+      try {
+        const content = buildSolutionContent({
+          assignmentName: assignment.name,
+          courseName,
+          dueText,
+          contexts: combinedContexts.map((entry) => ({
+            fileName: entry.fileName,
+            content: entry.content
+          }))
+        });
+        const artifact = await createSolutionArtifact({ extension, content });
+        if (cancelled) {
+          return;
+        }
+        const sanitizedOriginal = safeDownloadName(
+          originalName || `${assignment.name ?? 'assignment'}.${extension}`
+        );
+        const ensuredBase = sanitizedOriginal.length ? sanitizedOriginal : `assignment.${extension}`;
+        const ensuredWithExt = ensuredBase.includes('.') ? ensuredBase : `${ensuredBase}.${extension}`;
+        const downloadName = ensuredWithExt.startsWith('Completed_')
+          ? ensuredWithExt
+          : `Completed_${ensuredWithExt}`;
+        const url = URL.createObjectURL(artifact.blob);
+        if (solutionUrlRef.current) {
+          URL.revokeObjectURL(solutionUrlRef.current);
+        }
+        solutionUrlRef.current = url;
+        setSolutionFile({ url, fileName: downloadName, mimeType: artifact.mimeType });
+        setSolutionStatus('ready');
+      } catch (err) {
+        if (!cancelled) {
+          if (solutionUrlRef.current) {
+            URL.revokeObjectURL(solutionUrlRef.current);
+            solutionUrlRef.current = null;
+          }
+          setSolutionFile(null);
+          setSolutionStatus('error');
+          setSolutionError((err as Error).message || 'Failed to generate the completed file.');
+        }
+      }
+    };
+
+    generate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assignment, combinedContexts, courseName, dueText, hasGuideContext, instructorContexts, solutionStatus, userContexts]);
+
+  const retrySolutionGeneration = () => {
+    if (!assignment) {
+      return;
+    }
+    lastContextSignatureRef.current = null;
+    setSolutionStatus('idle');
+    setSolutionError(null);
+  };
+
   function generateGuide(mode: 'initial' | 'variations' | 'explainMore') {
     if (!assignment) {
+      return;
+    }
+    if (solutionStatus !== 'ready') {
       return;
     }
     if (guideStatus === 'loading') {
@@ -196,7 +352,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         const dueDescription = assignment.due_at
           ? `It is due ${new Date(assignment.due_at).toLocaleString()}.`
           : 'No official due date is recorded, so plan a personal deadline.';
-        const explanation = `gpt-4o-mini summary for ${assignment.name}:
+        const explanation = `${STUDY_COACH_LABEL} summary for ${assignment.name}:
 
 ${dueDescription}
 
@@ -213,10 +369,10 @@ ${contextSummary}`;
           solutionPieces.push('2. Support each section with evidence or examples drawn from course materials.');
           solutionPieces.push('3. Close with a reflection or conclusion that echoes the stated requirements.');
         }
-        const solution = `Draft solution outline (generated with ${GUIDE_MODEL}):
+        const solution = `Draft solution outline (from our ${STUDY_COACH_LABEL}):
 ${solutionPieces.join('\n')}`;
 
-        const reasoning = `Reasoning trace (${GUIDE_MODEL}):
+        const reasoning = `Reasoning trace (${STUDY_COACH_LABEL}):
 ${buildReasoningTrace(combinedContexts)}`;
 
         setGuideContent({
@@ -241,7 +397,7 @@ ${buildReasoningTrace(combinedContexts)}`;
           }
           return {
             ...previous,
-            variations: `Alternative takes (${GUIDE_MODEL}):\n${variations.join('\n')}`,
+            variations: `Alternative takes (${STUDY_COACH_LABEL}):\n${variations.join('\n')}`,
             lastUpdated: Date.now()
           };
         });
@@ -255,7 +411,7 @@ ${buildReasoningTrace(combinedContexts)}`;
             : 'Break the assignment into sub-tasks (research, outline, draft, review) and add checkpoints for each to avoid last-minute rushes.';
           return {
             ...previous,
-            extraExplanation: `Deeper breakdown (${GUIDE_MODEL}):\n${detail}`,
+            extraExplanation: `Deeper breakdown (${STUDY_COACH_LABEL}):\n${detail}`,
             lastUpdated: Date.now()
           };
         });
@@ -520,177 +676,241 @@ ${buildReasoningTrace(combinedContexts)}`;
         ) : null}
       </div>
 
-      <div
-        style={{
-          border: '1px solid var(--surface-border)',
-          borderRadius: 16,
-          background: 'rgba(255,255,255,0.85)',
-          overflow: 'hidden'
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setGuideExpanded((prev) => !prev)}
+      {hasGuideContext ? (
+        <div
           style={{
-            width: '100%',
-            background: 'transparent',
-            border: 'none',
-            padding: '16px 20px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer'
+            border: '1px solid var(--surface-border)',
+            borderRadius: 16,
+            background: 'rgba(255,255,255,0.85)',
+            overflow: 'hidden'
           }}
         >
-          <span style={{ fontWeight: 600 }}>AI Assignment Guide</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{guideExpanded ? '▲' : '▼'}</span>
-        </button>
-        {guideExpanded ? (
-          <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-              Generate a personalised walkthrough with {GUIDE_MODEL}. The guide uses instructor materials and your
-              uploads as context and only runs when requested.
-            </p>
-            {guideStatus === 'idle' ? (
-              <button
-                type="button"
-                onClick={() => generateGuide('initial')}
-                style={{
-                  alignSelf: 'flex-start',
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 999,
-                  padding: '10px 22px',
-                  cursor: 'pointer',
-                  boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
-                }}
-              >
-                Generate guide
-              </button>
-            ) : null}
-            {guideStatus === 'loading' ? (
-              <div style={{ color: 'var(--text-secondary)' }}>Asking {GUIDE_MODEL} for insights…</div>
-            ) : null}
-            {guideContent ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <strong>Requirements recap</strong>
-                  <pre
-                    style={{
-                      whiteSpace: 'pre-wrap',
-                      margin: 0,
-                      fontFamily: 'inherit',
-                      background: 'rgba(15, 23, 42, 0.04)',
-                      padding: '12px 16px',
-                      borderRadius: 12
-                    }}
-                  >
-                    {guideContent.explanation}
-                  </pre>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <strong>Draft solution</strong>
-                  <pre
-                    style={{
-                      whiteSpace: 'pre-wrap',
-                      margin: 0,
-                      fontFamily: 'inherit',
-                      background: 'rgba(15, 23, 42, 0.04)',
-                      padding: '12px 16px',
-                      borderRadius: 12
-                    }}
-                  >
-                    {guideContent.solution}
-                  </pre>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <strong>Reasoning trace</strong>
-                  <pre
-                    style={{
-                      whiteSpace: 'pre-wrap',
-                      margin: 0,
-                      fontFamily: 'inherit',
-                      background: 'rgba(15, 23, 42, 0.04)',
-                      padding: '12px 16px',
-                      borderRadius: 12
-                    }}
-                  >
-                    {guideContent.reasoning}
-                  </pre>
-                </div>
-                {guideContent.variations ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <strong>Practice variations</strong>
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        margin: 0,
-                        fontFamily: 'inherit',
-                        background: 'rgba(15, 23, 42, 0.04)',
-                        padding: '12px 16px',
-                        borderRadius: 12
-                      }}
-                    >
-                      {guideContent.variations}
-                    </pre>
-                  </div>
-                ) : null}
-                {guideContent.extraExplanation ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <strong>Deeper explanation</strong>
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        margin: 0,
-                        fontFamily: 'inherit',
-                        background: 'rgba(15, 23, 42, 0.04)',
-                        padding: '12px 16px',
-                        borderRadius: 12
-                      }}
-                    >
-                      {guideContent.extraExplanation}
-                    </pre>
-                  </div>
-                ) : null}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => generateGuide('variations')}
-                    disabled={guideStatus === 'loading'}
-                    style={{
-                      border: '1px solid var(--surface-border)',
-                      borderRadius: 999,
-                      padding: '8px 16px',
-                      background: '#fff',
-                      cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Generate Variations
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => generateGuide('explainMore')}
-                    disabled={guideStatus === 'loading'}
-                    style={{
-                      border: '1px solid var(--surface-border)',
-                      borderRadius: 999,
-                      padding: '8px 16px',
-                      background: '#fff',
-                      cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Explain More
-                  </button>
-                  <span style={{ alignSelf: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                    Updated {new Date(guideContent.lastUpdated).toLocaleTimeString()}
+          <button
+            type="button"
+            onClick={() => setGuideExpanded((prev) => !prev)}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: '16px 20px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: 'pointer'
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Study Coach Assignment Guide</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{guideExpanded ? '▲' : '▼'}</span>
+          </button>
+          {guideExpanded ? (
+            <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                Generate a personalised walkthrough with our {STUDY_COACH_LABEL}. It uses instructor materials and your
+                uploads as context and only runs when requested.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <strong>Completed assignment file</strong>
+                {solutionStatus === 'generating' || solutionStatus === 'idle' ? (
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Preparing your completed assignment file…
                   </span>
-                </div>
+                ) : null}
+                {solutionStatus === 'error' ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      alignItems: 'center',
+                      color: '#b91c1c'
+                    }}
+                  >
+                    <span>We couldn’t finalise the completed file.</span>
+                    <button
+                      type="button"
+                      onClick={retrySolutionGeneration}
+                      style={{
+                        border: '1px solid var(--surface-border)',
+                        borderRadius: 999,
+                        padding: '6px 14px',
+                        background: '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
+                {solutionStatus === 'ready' && solutionFile ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <a
+                      href={solutionFile.url}
+                      download={solutionFile.fileName}
+                      style={{
+                        alignSelf: 'flex-start',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        borderRadius: 999,
+                        padding: '10px 22px',
+                        textDecoration: 'none',
+                        boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+                      }}
+                    >
+                      Download {solutionFile.fileName}
+                    </a>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                      Save the completed file before exploring the deeper guidance below.
+                    </span>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+              {solutionStatus === 'ready' ? (
+                <>
+                  {guideStatus === 'idle' ? (
+                    <button
+                      type="button"
+                      onClick={() => generateGuide('initial')}
+                      style={{
+                        alignSelf: 'flex-start',
+                        background: 'var(--accent)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 999,
+                        padding: '10px 22px',
+                        cursor: 'pointer',
+                        boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+                      }}
+                    >
+                      Generate guide
+                    </button>
+                  ) : null}
+                  {guideStatus === 'loading' ? (
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      Our {STUDY_COACH_LABEL} is assembling insights…
+                    </div>
+                  ) : null}
+                  {guideContent ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <strong>Requirements recap</strong>
+                        <pre
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            margin: 0,
+                            fontFamily: 'inherit',
+                            background: 'rgba(15, 23, 42, 0.04)',
+                            padding: '12px 16px',
+                            borderRadius: 12
+                          }}
+                        >
+                          {guideContent.explanation}
+                        </pre>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <strong>Draft solution</strong>
+                        <pre
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            margin: 0,
+                            fontFamily: 'inherit',
+                            background: 'rgba(15, 23, 42, 0.04)',
+                            padding: '12px 16px',
+                            borderRadius: 12
+                          }}
+                        >
+                          {guideContent.solution}
+                        </pre>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <strong>Reasoning trace</strong>
+                        <pre
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            margin: 0,
+                            fontFamily: 'inherit',
+                            background: 'rgba(15, 23, 42, 0.04)',
+                            padding: '12px 16px',
+                            borderRadius: 12
+                          }}
+                        >
+                          {guideContent.reasoning}
+                        </pre>
+                      </div>
+                      {guideContent.variations ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <strong>Practice variations</strong>
+                          <pre
+                            style={{
+                              whiteSpace: 'pre-wrap',
+                              margin: 0,
+                              fontFamily: 'inherit',
+                              background: 'rgba(15, 23, 42, 0.04)',
+                              padding: '12px 16px',
+                              borderRadius: 12
+                            }}
+                          >
+                            {guideContent.variations}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {guideContent.extraExplanation ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <strong>Deeper explanation</strong>
+                          <pre
+                            style={{
+                              whiteSpace: 'pre-wrap',
+                              margin: 0,
+                              fontFamily: 'inherit',
+                              background: 'rgba(15, 23, 42, 0.04)',
+                              padding: '12px 16px',
+                              borderRadius: 12
+                            }}
+                          >
+                            {guideContent.extraExplanation}
+                          </pre>
+                        </div>
+                      ) : null}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => generateGuide('variations')}
+                          disabled={guideStatus === 'loading'}
+                          style={{
+                            border: '1px solid var(--surface-border)',
+                            borderRadius: 999,
+                            padding: '8px 16px',
+                            background: '#fff',
+                            cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Generate Variations
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => generateGuide('explainMore')}
+                          disabled={guideStatus === 'loading'}
+                          style={{
+                            border: '1px solid var(--surface-border)',
+                            borderRadius: 999,
+                            padding: '8px 16px',
+                            background: '#fff',
+                            cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Explain More
+                        </button>
+                        <span style={{ alignSelf: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                          Updated {new Date(guideContent.lastUpdated).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

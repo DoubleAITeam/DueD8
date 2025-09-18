@@ -3,8 +3,6 @@ import type { Assignment, Course } from '../../lib/canvasClient';
 import type { AssignmentContextEntry, ViewState } from '../state/store';
 import { useStore } from '../state/store';
 
-const MODEL_NAME = 'gpt-4o-mini';
-
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 type Props = {
@@ -39,7 +37,7 @@ function summarizeContexts(contexts: AssignmentContextEntry[]) {
   }).join('\n');
 }
 
-// PHASE 3: Compose a lightweight stand-in response that references GPT-4o-mini for transparency.
+// PHASE 3: Compose a lightweight stand-in response that mirrors the Study Coach tone for transparency.
 function composeAssistantResponse(options: {
   view: ViewState;
   message: string;
@@ -66,7 +64,7 @@ function composeAssistantResponse(options: {
   } = options;
 
   const lines: string[] = [];
-  lines.push(`Simulated ${MODEL_NAME} reply for ${profileName ? `${profileName}'s` : 'your'} workspace.`);
+  lines.push(`Study Coach reply for ${profileName ? `${profileName}'s` : 'your'} workspace.`);
   lines.push(`You asked: "${message}"`);
 
   if (view.screen === 'assignment' && selectedAssignment) {
@@ -246,7 +244,7 @@ export default function ChatbotPanel({
       >
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <strong>Study Coach</strong>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Model: {MODEL_NAME}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Your AI Study Coach companion.</div>
         </div>
         <button
           type="button"
