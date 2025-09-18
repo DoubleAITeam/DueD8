@@ -2,18 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
 import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
+import StudyGuidePanel from '../components/StudyGuidePanel';
+import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
 const STUDY_COACH_LABEL = 'Study Coach';
-
-type GuideContent = {
-  explanation: string;
-  solution: string;
-  reasoning: string;
-  variations?: string;
-  extraExplanation?: string;
-  lastUpdated: number;
-};
 
 function ContextList({ entries }: { entries: AssignmentContextEntry[] }) {
   return (
@@ -54,35 +47,6 @@ function ContextList({ entries }: { entries: AssignmentContextEntry[] }) {
   );
 }
 
-function summariseForGuide(entries: AssignmentContextEntry[], limit = 4) {
-  if (!entries.length) {
-    return '• No uploaded documents detected yet. Focus on the assignment description and rubric.';
-  }
-  return entries
-    .slice(0, limit)
-    .map((entry) => {
-      const snippet = entry.content.replace(/\s+/g, ' ').trim();
-      const preview = snippet.length > 160 ? `${snippet.slice(0, 160)}…` : snippet;
-      return `• ${entry.fileName}: ${preview}`;
-    })
-    .join('\n');
-}
-
-function buildReasoningTrace(entries: AssignmentContextEntry[]) {
-  const first = entries[0];
-  const second = entries[1];
-  const steps: string[] = [
-    '1. Parse the instructor instructions to understand deliverables and evaluation criteria.',
-    first
-      ? `2. Highlight key points from “${first.fileName}” to anchor the response in course expectations.`
-      : '2. Outline main requirements from the assignment description.',
-    second
-      ? `3. Cross-reference supporting evidence from “${second.fileName}” to justify the draft.`
-      : '3. Draft a structured response that covers each required component before polishing.'
-  ];
-  return steps.join('\n');
-}
-
 function safeDownloadName(input: string) {
   return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
 }
@@ -110,8 +74,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const [instructorLoading, setInstructorLoading] = useState(false);
   const [instructorError, setInstructorError] = useState<string | null>(null);
   const [guideExpanded, setGuideExpanded] = useState(false);
-  const [guideStatus, setGuideStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
-  const [guideContent, setGuideContent] = useState<GuideContent | null>(null);
+  const [guideStatus, setGuideStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle');
+  const [guidePlan, setGuidePlan] = useState<StudyGuidePlan | null>(null);
+  const [guideProgress, setGuideProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [guideError, setGuideError] = useState<string | null>(null);
+  const activeGuideRunRef = useRef<number>(0);
   const [solutionStatus, setSolutionStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle');
   const [solutionError, setSolutionError] = useState<string | null>(null);
   const [solutionFile, setSolutionFile] = useState<
@@ -152,8 +119,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   useEffect(() => {
     setInstructorError(null);
     setInstructorLoading(false);
-    setGuideContent(null);
     setGuideStatus('idle');
+    setGuidePlan(null);
+    setGuideProgress(null);
+    setGuideError(null);
+    activeGuideRunRef.current += 1;
     setSolutionStatus('idle');
     setSolutionError(null);
     if (solutionUrlRef.current) {
@@ -223,8 +193,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       setSolutionError(null);
       setSolutionFile(null);
       lastContextSignatureRef.current = null;
-      setGuideContent(null);
+      setGuidePlan(null);
+      setGuideProgress(null);
+      setGuideError(null);
       setGuideStatus('idle');
+      activeGuideRunRef.current += 1;
       return;
     }
 
@@ -250,8 +223,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     setSolutionStatus('generating');
     setSolutionError(null);
     if (lastContextSignatureRef.current !== signature) {
-      setGuideContent(null);
+      setGuidePlan(null);
+      setGuideProgress(null);
+      setGuideError(null);
       setGuideStatus('idle');
+      activeGuideRunRef.current += 1;
     }
     lastContextSignatureRef.current = signature;
 
@@ -330,95 +306,62 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     setSolutionError(null);
   };
 
-  function generateGuide(mode: 'initial' | 'variations' | 'explainMore') {
-    if (!assignment) {
+  const generateGuide = async () => {
+    if (!assignment || !hasGuideContext) {
       return;
     }
     if (solutionStatus !== 'ready') {
       return;
     }
-    if (guideStatus === 'loading') {
+    if (guideStatus === 'generating') {
       return;
     }
-    if (mode !== 'initial' && !guideContent) {
-      generateGuide('initial');
-      return;
-    }
-    setGuideStatus('loading');
+    const previousPlan = guidePlan;
+    try {
+      setGuideStatus('generating');
+      setGuideError(null);
+      const plan = buildStudyGuidePlan({
+        assignmentName: assignment.name,
+        courseName,
+        dueAt: assignment.due_at ?? null,
+        contexts: combinedContexts
+      });
+      const totalSections = plan.sections.length;
+      const runId = Date.now();
+      activeGuideRunRef.current = runId;
+      setGuideProgress({ current: 0, total: totalSections, label: 'Analysing context materials' });
+      setGuidePlan({ ...plan, sections: [] });
 
-    window.setTimeout(() => {
-      if (mode === 'initial') {
-        const contextSummary = summariseForGuide(combinedContexts);
-        const dueDescription = assignment.due_at
-          ? `It is due ${new Date(assignment.due_at).toLocaleString()}.`
-          : 'No official due date is recorded, so plan a personal deadline.';
-        const explanation = `${STUDY_COACH_LABEL} summary for ${assignment.name}:
-
-${dueDescription}
-
-Key details from your available context:
-${contextSummary}`;
-
-        const solutionPieces = combinedContexts.slice(0, 3).map((entry, index) => {
-          const snippet = entry.content.replace(/\s+/g, ' ').trim();
-          const preview = snippet.length > 120 ? `${snippet.slice(0, 120)}…` : snippet;
-          return `${index + 1}. Reference “${entry.fileName}” to address: ${preview}`;
-        });
-        if (!solutionPieces.length) {
-          solutionPieces.push('1. Outline your thesis or main answer based on the assignment description.');
-          solutionPieces.push('2. Support each section with evidence or examples drawn from course materials.');
-          solutionPieces.push('3. Close with a reflection or conclusion that echoes the stated requirements.');
+      for (let index = 0; index < plan.sections.length; index += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => window.setTimeout(resolve, 160));
+        if (activeGuideRunRef.current !== runId) {
+          return;
         }
-        const solution = `Draft solution outline (from our ${STUDY_COACH_LABEL}):
-${solutionPieces.join('\n')}`;
-
-        const reasoning = `Reasoning trace (${STUDY_COACH_LABEL}):
-${buildReasoningTrace(combinedContexts)}`;
-
-        setGuideContent({
-          explanation,
-          solution,
-          reasoning,
-          lastUpdated: Date.now()
-        });
-      } else if (mode === 'variations') {
-        setGuideContent((previous) => {
-          if (!previous) {
-            return previous;
-          }
-          const variations = combinedContexts.slice(0, 2).map((entry, index) => {
-            const snippet = entry.content.replace(/\s+/g, ' ').trim();
-            const preview = snippet.length > 100 ? `${snippet.slice(0, 100)}…` : snippet;
-            return `Variation ${String.fromCharCode(65 + index)}: Emphasise insights from “${entry.fileName}” — ${preview}`;
-          });
-          if (!variations.length) {
-            variations.push('Variation A: Present an analytical angle that compares two perspectives from the course.');
-            variations.push('Variation B: Reframe the answer as a step-by-step walkthrough for a peer.');
-          }
-          return {
-            ...previous,
-            variations: `Alternative takes (${STUDY_COACH_LABEL}):\n${variations.join('\n')}`,
-            lastUpdated: Date.now()
-          };
-        });
-      } else if (mode === 'explainMore') {
-        setGuideContent((previous) => {
-          if (!previous) {
-            return previous;
-          }
-          const detail = combinedContexts.length
-            ? `Start by mapping each required deliverable to the most relevant uploaded document (for example, “${combinedContexts[0].fileName}”). Then note evidence, quotes, or data points before writing full paragraphs.`
-            : 'Break the assignment into sub-tasks (research, outline, draft, review) and add checkpoints for each to avoid last-minute rushes.';
-          return {
-            ...previous,
-            extraExplanation: `Deeper breakdown (${STUDY_COACH_LABEL}):\n${detail}`,
-            lastUpdated: Date.now()
-          };
+        const nextSections = plan.sections.slice(0, index + 1);
+        setGuidePlan({ ...plan, sections: nextSections });
+        setGuideProgress({
+          current: index + 1,
+          total: totalSections,
+          label: `Stitching ${plan.sections[index].title}`
         });
       }
+
+      if (activeGuideRunRef.current !== runId) {
+        return;
+      }
+      setGuideProgress(null);
       setGuideStatus('ready');
-    }, 280);
-  }
+    } catch (err) {
+      console.error('Failed to generate study guide', err);
+      if (previousPlan) {
+        setGuidePlan(previousPlan);
+      }
+      setGuideError((err as Error).message || 'Failed to generate the guide.');
+      setGuideProgress(null);
+      setGuideStatus('error');
+    }
+  };
 
   if (!assignment) {
     return (
@@ -681,8 +624,7 @@ ${buildReasoningTrace(combinedContexts)}`;
           style={{
             border: '1px solid var(--surface-border)',
             borderRadius: 16,
-            background: 'rgba(255,255,255,0.85)',
-            overflow: 'hidden'
+            background: 'rgba(255,255,255,0.85)'
           }}
         >
           <button
@@ -703,10 +645,10 @@ ${buildReasoningTrace(combinedContexts)}`;
             <span style={{ color: 'var(--text-secondary)' }}>{guideExpanded ? '▲' : '▼'}</span>
           </button>
           {guideExpanded ? (
-            <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-                Generate a personalised walkthrough with our {STUDY_COACH_LABEL}. It uses instructor materials and your
-                uploads as context and only runs when requested.
+            <div style={{ padding: '0 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Generate a personalised walkthrough with our {STUDY_COACH_LABEL}. It uses instructor materials and your uploads
+                as context and only runs when requested. No model names are shown—just student-friendly guidance.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <strong>Completed assignment file</strong>
@@ -765,147 +707,14 @@ ${buildReasoningTrace(combinedContexts)}`;
                 ) : null}
               </div>
               {solutionStatus === 'ready' ? (
-                <>
-                  {guideStatus === 'idle' ? (
-                    <button
-                      type="button"
-                      onClick={() => generateGuide('initial')}
-                      style={{
-                        alignSelf: 'flex-start',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 999,
-                        padding: '10px 22px',
-                        cursor: 'pointer',
-                        boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
-                      }}
-                    >
-                      Generate guide
-                    </button>
-                  ) : null}
-                  {guideStatus === 'loading' ? (
-                    <div style={{ color: 'var(--text-secondary)' }}>
-                      Our {STUDY_COACH_LABEL} is assembling insights…
-                    </div>
-                  ) : null}
-                  {guideContent ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <strong>Requirements recap</strong>
-                        <pre
-                          style={{
-                            whiteSpace: 'pre-wrap',
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            background: 'rgba(15, 23, 42, 0.04)',
-                            padding: '12px 16px',
-                            borderRadius: 12
-                          }}
-                        >
-                          {guideContent.explanation}
-                        </pre>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <strong>Draft solution</strong>
-                        <pre
-                          style={{
-                            whiteSpace: 'pre-wrap',
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            background: 'rgba(15, 23, 42, 0.04)',
-                            padding: '12px 16px',
-                            borderRadius: 12
-                          }}
-                        >
-                          {guideContent.solution}
-                        </pre>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <strong>Reasoning trace</strong>
-                        <pre
-                          style={{
-                            whiteSpace: 'pre-wrap',
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            background: 'rgba(15, 23, 42, 0.04)',
-                            padding: '12px 16px',
-                            borderRadius: 12
-                          }}
-                        >
-                          {guideContent.reasoning}
-                        </pre>
-                      </div>
-                      {guideContent.variations ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <strong>Practice variations</strong>
-                          <pre
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              margin: 0,
-                              fontFamily: 'inherit',
-                              background: 'rgba(15, 23, 42, 0.04)',
-                              padding: '12px 16px',
-                              borderRadius: 12
-                            }}
-                          >
-                            {guideContent.variations}
-                          </pre>
-                        </div>
-                      ) : null}
-                      {guideContent.extraExplanation ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <strong>Deeper explanation</strong>
-                          <pre
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              margin: 0,
-                              fontFamily: 'inherit',
-                              background: 'rgba(15, 23, 42, 0.04)',
-                              padding: '12px 16px',
-                              borderRadius: 12
-                            }}
-                          >
-                            {guideContent.extraExplanation}
-                          </pre>
-                        </div>
-                      ) : null}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={() => generateGuide('variations')}
-                          disabled={guideStatus === 'loading'}
-                          style={{
-                            border: '1px solid var(--surface-border)',
-                            borderRadius: 999,
-                            padding: '8px 16px',
-                            background: '#fff',
-                            cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          Generate Variations
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => generateGuide('explainMore')}
-                          disabled={guideStatus === 'loading'}
-                          style={{
-                            border: '1px solid var(--surface-border)',
-                            borderRadius: 999,
-                            padding: '8px 16px',
-                            background: '#fff',
-                            cursor: guideStatus === 'loading' ? 'not-allowed' : 'pointer'
-                          }}
-                        >
-                          Explain More
-                        </button>
-                        <span style={{ alignSelf: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                          Updated {new Date(guideContent.lastUpdated).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    </div>
-                  ) : null}
-                </>
+                <StudyGuidePanel
+                  plan={guidePlan}
+                  status={guideStatus}
+                  progress={guideProgress}
+                  onGenerate={generateGuide}
+                  canGenerate={solutionStatus === 'ready'}
+                  error={guideError}
+                />
               ) : null}
             </div>
           ) : null}
