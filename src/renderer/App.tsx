@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import ConnectCanvas from './pages/ConnectCanvas';
 import Course from './pages/Course';
 import AssignmentDetail from './pages/AssignmentDetail';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -13,11 +14,13 @@ export default function App() {
       <div style={{ padding: 16 }}>
         <nav style={{ marginBottom: 12 }}>
           <NavLink to="/">Dashboard</NavLink>{' | '}
-          <NavLink to="/connect">Connect</NavLink>
+          <NavLink to="/connect">Connect</NavLink>{' | '}
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/connect" element={<ConnectCanvas />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/course/:id" element={<Course />} />
           <Route path="/assignment/:id" element={<AssignmentDetail assignment={null} onBack={() => {}} />} />
         </Routes>
