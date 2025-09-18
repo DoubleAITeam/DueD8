@@ -1,8 +1,20 @@
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useCourseData } from '../App';
 import { useUIStore } from '../state/uiStore';
 
 export default function Dashboard() {
   const unreadCount = useUIStore((state) => state.unreadCount);
   const incUnread = useUIStore((state) => state.incUnread);
+  const navigate = useNavigate();
+  const { courses, loadingCourses } = useCourseData();
+
+  const handleCourseClick = React.useCallback(
+    (courseId: number) => {
+      navigate(`/course/${courseId}`);
+    },
+    [navigate]
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -51,6 +63,40 @@ export default function Dashboard() {
           Simulate New Message
         </button>
       </div>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 20 }}>Your Courses</h2>
+        {loadingCourses ? (
+          <p style={{ margin: 0, color: '#64748b' }}>Loading courses...</p>
+        ) : courses.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {courses.map((course) => (
+              <button
+                key={course.id}
+                type="button"
+                onClick={() => handleCourseClick(course.id)}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 12,
+                  padding: '16px 20px',
+                  background: '#ffffff',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  cursor: 'pointer'
+                }}
+              >
+                <span style={{ fontWeight: 600, fontSize: 16 }}>{course.name}</span>
+                <span style={{ fontSize: 13, color: '#64748b' }}>
+                  {course.course_code ?? 'Course overview'}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p style={{ margin: 0, color: '#64748b' }}>No courses available yet.</p>
+        )}
+      </section>
     </div>
   );
 }
