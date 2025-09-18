@@ -11,6 +11,10 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "react-router-dom": ["src/lib/react-router-dom"]
+    },
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

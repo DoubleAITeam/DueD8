@@ -31,7 +31,7 @@ type AppState = {
 
 export const useStore = create<AppState>((set) => ({
   connected: false,
-  profile: null,
+  profile: { name: 'Loading...', primary_email: '' },
   toast: null,
   view: { screen: 'dashboard' },
   assignmentContexts: {},
