@@ -1,6 +1,9 @@
 import React from 'react';
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom';
-import Course from './pages/Course';
+import { BinderAppShell } from './components/binder/BinderAppShell';
+import { isFeatureEnabled } from './config/featureFlags';
+import AssignmentPage from './pages/Assignment';
+import ClassPage from './pages/Class';
 import Dashboard from './pages/Dashboard';
 import { useUIStore } from './state/uiStore';
 
@@ -10,7 +13,7 @@ const linkStyles: React.CSSProperties = {
   textDecoration: 'none'
 };
 
-function TopBar() {
+function LegacyTopBar() {
   const chatOpen = useUIStore((state) => state.chatOpen);
   const unreadCount = useUIStore((state) => state.unreadCount);
   const openChat = useUIStore((state) => state.openChat);
@@ -46,11 +49,12 @@ function TopBar() {
             backgroundColor: isActive ? '#e2e8f0' : 'transparent',
             fontWeight: isActive ? 600 : 500
           })}
+          end
         >
           Dashboard
         </NavLink>
         <NavLink
-          to="/course/sample"
+          to="/class/it223"
           style={({ isActive }) => ({
             ...linkStyles,
             color: isActive ? '#0f172a' : '#64748b',
@@ -100,7 +104,7 @@ function TopBar() {
   );
 }
 
-function ContentArea() {
+function LegacyContentArea() {
   return (
     <main
       style={{
@@ -112,27 +116,32 @@ function ContentArea() {
     >
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/course/:id" element={<Course />} />
+        <Route path="/class/:classId" element={<ClassPage />} />
+        <Route path="/class/:classId/assignment/:assignmentId" element={<AssignmentPage />} />
       </Routes>
     </main>
   );
 }
 
-export default function App() {
+function LegacyAppShell() {
   return (
-    <BrowserRouter>
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: '#ffffff',
-          color: '#0f172a'
-        }}
-      >
-        <TopBar />
-        <ContentArea />
-      </div>
-    </BrowserRouter>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#ffffff',
+        color: '#0f172a'
+      }}
+    >
+      <LegacyTopBar />
+      <LegacyContentArea />
+    </div>
   );
+}
+
+export default function App() {
+  const binderPreviewEnabled = isFeatureEnabled('ui.binderPreview');
+
+  return <BrowserRouter>{binderPreviewEnabled ? <BinderAppShell /> : <LegacyAppShell />}</BrowserRouter>;
 }

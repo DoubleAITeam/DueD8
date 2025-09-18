@@ -1,0 +1,318 @@
+:root {
+  /* spacing */
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* sizing */
+  --tab-w: 44px;
+  --tab-w-compact: 36px;
+  --topbar-h: 56px;
+  --rail-gap: 8px;
+
+  /* radius */
+  --r-s: 4px;
+  --r-m: 8px;
+  --r-l: 12px;
+
+  /* elevation */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --elev-2: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* typography */
+  --font-sans: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+  --fs-xs: 11px;
+  --fs-s: 13px;
+  --fs-m: 15px;
+  --fw-med: 500;
+
+  /* grayscale */
+  --gray-0: #ffffff;
+  --gray-50: #f7f7f8;
+  --gray-100: #efeff0;
+  --gray-200: #e3e3e6;
+  --gray-300: #d4d4d8;
+  --gray-500: #8e8e93;
+  --gray-700: #3a3a3c;
+  --gray-900: #0c0c0d;
+
+  /* accents for class identity */
+  --accent-blue: #0a84ff;
+  --accent-green: #30d158;
+  --accent-orange: #ff9f0a;
+  --accent-purple: #bf5af2;
+  --accent-red: #ff453a;
+  --accent-teal: #64d2ff;
+  --accent-yellow: #ffd60a;
+
+  /* semantic */
+  --border-subtle: rgba(12, 12, 13, 0.08);
+  --text-muted: #6b6b6f;
+  --focus-ring: #0a84ff;
+}
+
+body {
+  margin: 0;
+  background: var(--gray-50);
+  color: var(--gray-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: 100dvh;
+  background: var(--gray-50);
+  color: var(--gray-900);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  background: var(--gray-0);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.topbar__brand {
+  font-size: var(--fs-m);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.topbar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.topbar__nav {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.topbar__link {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gray-500);
+  font-size: var(--fs-s);
+  font-weight: var(--fw-med);
+  padding: 6px 10px;
+  border-radius: var(--r-s);
+  text-decoration: none;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.topbar__link--active {
+  background: var(--gray-100);
+  color: var(--gray-900);
+  border-color: var(--border-subtle);
+}
+
+.topbar__assistant {
+  border: 1px solid var(--accent-purple);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent-purple);
+  font-size: var(--fs-s);
+  font-weight: var(--fw-med);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.topbar__assistant--active {
+  background: var(--accent-purple);
+  color: var(--gray-0);
+}
+
+.topbar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent-red);
+  color: var(--gray-0);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  height: calc(100dvh - var(--topbar-h));
+  overflow: hidden;
+}
+
+.binder-rail-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.binder-rail-wrapper::before,
+.binder-rail-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.binder-rail-wrapper::before {
+  left: 0;
+  background: linear-gradient(to right, var(--gray-50), rgba(247, 247, 248, 0));
+}
+
+.binder-rail-wrapper::after {
+  right: 0;
+  background: linear-gradient(to left, var(--gray-50), rgba(247, 247, 248, 0));
+}
+
+.binder-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--tab-w);
+  gap: var(--rail-gap);
+  align-content: start;
+  height: 100%;
+  padding-right: var(--space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+.binder-tab {
+  width: var(--tab-w);
+  min-height: 220px;
+  background: var(--gray-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-s);
+  box-shadow: var(--elev-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  scroll-snap-align: start;
+  cursor: pointer;
+  color: var(--gray-700);
+  transition: box-shadow 0.2s ease;
+}
+
+.binder-tab:hover {
+  box-shadow: var(--elev-2);
+}
+
+.binder-tab--active {
+  color: var(--gray-900);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+.binder-tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.binder-tab__label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: var(--fs-s);
+  font-weight: var(--fw-med);
+  letter-spacing: 0.02em;
+  padding: var(--space-3) 0;
+}
+
+.binder-tab__spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: var(--r-s) 0 0 var(--r-s);
+  background: var(--gray-300);
+}
+
+.binder-tab__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  font-size: 12px;
+}
+
+.binder-tab__close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.content-pane {
+  background: var(--gray-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-m);
+  box-shadow: var(--elev-1);
+  padding: var(--space-6);
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.breadcrumb {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--fs-s);
+  margin-bottom: var(--space-4);
+}
+
+.breadcrumb a,
+.breadcrumb span {
+  color: inherit;
+  text-decoration: none;
+}
+
+.breadcrumb span[aria-current='page'] {
+  color: var(--gray-900);
+}
+
+.breadcrumb__separator {
+  color: var(--gray-300);
+}
+
+@media (max-width: 1024px) {
+  .binder-rail {
+    grid-auto-columns: var(--tab-w-compact);
+  }
+}
