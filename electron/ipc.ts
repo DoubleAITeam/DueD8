@@ -1,12 +1,17 @@
 // src/main/ipc.ts
 import { ipcMain } from 'electron';
+import path from 'node:path';
 import { z } from 'zod';
 import { getDb } from './db';
 import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from './canvasService';
 import type { CanvasGetPayload } from './canvasService';
 import type { IpcResult } from '../src/shared/ipc';
 import { mainError, mainLog } from './logger';
-import { processAssignmentUploads, type ProcessedFile } from './fileProcessing';
+import {
+  processAssignmentUploads,
+  processRemoteAttachments,
+  type ProcessedFile
+} from './fileProcessing';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -93,6 +98,11 @@ const FileDescriptorSchema = z.object({
   type: z.string().optional()
 });
 
+const AssignmentInstructorContextRequest = z.object({
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive()
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -104,6 +114,126 @@ ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResul
     return failure((error as Error).message || 'Failed to process uploads');
   }
 });
+
+type CanvasAttachment = {
+  id?: number;
+  filename?: string;
+  display_name?: string;
+  url?: string;
+  content_type?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type CanvasAssignmentDetail = {
+  id: number;
+  name?: string;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  attachments?: CanvasAttachment[];
+};
+
+function htmlToPlainText(html: string) {
+  const withoutScripts = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ');
+  const withoutStyles = withoutScripts.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, ' ');
+  const withBreaks = withoutStyles
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/?p\s*[^>]*>/gi, (match) => (match.startsWith('</') ? '\n\n' : '\n'))
+    .replace(/<\/?li\s*[^>]*>/gi, (match) => (match.startsWith('</') ? '\n' : '\n• '))
+    .replace(/<\/?h[1-6][^>]*>/gi, '\n\n');
+  const stripped = withBreaks.replace(/<[^>]+>/g, ' ');
+  const decoded = stripped
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+  return decoded
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length)
+    .join('\n');
+}
+
+ipcMain.handle(
+  'assignments:fetchInstructorContext',
+  async (_event, payload): Promise<IpcResult<{ entries: Array<{ fileName: string; content: string; uploadedAt: number }> }>> => {
+    try {
+      const { assignmentId, courseId } = AssignmentInstructorContextRequest.parse(payload);
+      const result = await fetchCanvasJson({
+        path: `/api/v1/courses/${courseId}/assignments/${assignmentId}`,
+        query: { 'include[]': ['submission'] }
+      });
+      if (!result.ok) {
+        return failure(result.error || 'Failed to load assignment', result.status);
+      }
+
+      const assignment = (result.data ?? null) as CanvasAssignmentDetail | null;
+      if (!assignment) {
+        return success({ entries: [] });
+      }
+
+      const attachments = Array.isArray(assignment.attachments) ? assignment.attachments : [];
+      const eligibleAttachments = attachments
+        .map((attachment, index) => {
+          const name =
+            attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
+          const ext = name ? path.extname(name).toLowerCase() : '';
+          if (!name || !attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+            return null;
+          }
+          return {
+            url: attachment.url,
+            name,
+            type: attachment.content_type,
+            createdAt: attachment.created_at,
+            updatedAt: attachment.updated_at
+          };
+        })
+        .filter((entry): entry is {
+          url: string;
+          name: string;
+          type?: string;
+          createdAt?: string | null;
+          updatedAt?: string | null;
+        } => Boolean(entry));
+
+      const processedAttachments = await processRemoteAttachments(eligibleAttachments);
+      const attachmentEntries = processedAttachments.map((file, index) => {
+        const meta = eligibleAttachments[index];
+        const timestamp = meta?.updatedAt || meta?.createdAt || null;
+        const parsed = timestamp ? Date.parse(timestamp) : Number.NaN;
+        return {
+          fileName: file.fileName,
+          content: file.content,
+          uploadedAt: Number.isNaN(parsed) ? Date.now() : parsed
+        };
+      });
+
+      const entries = [...attachmentEntries];
+      const description = typeof assignment.description === 'string' ? assignment.description : '';
+      if (description.trim().length) {
+        const plain = htmlToPlainText(description);
+        if (plain.length) {
+          const stamp = assignment.updated_at || assignment.created_at || null;
+          const parsed = stamp ? Date.parse(stamp) : Number.NaN;
+          entries.unshift({
+            fileName: `${assignment.name ?? 'Assignment'} description`,
+            content: plain,
+            uploadedAt: Number.isNaN(parsed) ? Date.now() : parsed
+          });
+        }
+      }
+
+      return success({ entries });
+    } catch (error) {
+      mainError('assignments:fetchInstructorContext failed', (error as Error).message);
+      return failure((error as Error).message || 'Failed to load instructor context');
+    }
+  }
+);
 
 ipcMain.handle('students.add', (_e, payload) => {
   const s = StudentSchema.parse(payload);

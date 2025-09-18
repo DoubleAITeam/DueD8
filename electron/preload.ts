@@ -35,5 +35,10 @@ contextBridge.exposeInMainWorld('dued8', {
     // PHASE 2: Allow renderer to hand uploaded file paths to the secure main process.
     processUploads: (files: Array<{ path: string; name: string; type?: string }>) =>
       ipcRenderer.invoke('files:processUploads', files)
+  },
+
+  assignments: {
+    fetchInstructorContext: (payload: { assignmentId: number; courseId: number }) =>
+      ipcRenderer.invoke('assignments:fetchInstructorContext', payload)
   }
 });

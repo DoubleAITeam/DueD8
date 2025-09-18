@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -7,6 +8,13 @@ const execFileAsync = promisify(execFile);
 
 export type UploadDescriptor = { path: string; name: string; type?: string };
 export type ProcessedFile = { fileName: string; content: string };
+export type RemoteAttachmentDescriptor = {
+  url: string;
+  name: string;
+  type?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
 
 // PHASE 2: Decode the simple escape sequences Canvas attachments often contain.
 function decodePdfEscapes(input: string) {
@@ -133,4 +141,47 @@ export async function processAssignmentUploads(files: UploadDescriptor[]): Promi
   }
 
   return results;
+}
+
+function safeFileName(input: string) {
+  return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
+}
+
+export async function processRemoteAttachments(
+  attachments: RemoteAttachmentDescriptor[]
+): Promise<ProcessedFile[]> {
+  if (!attachments.length) {
+    return [];
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dued8-attachment-'));
+  try {
+    const descriptors: UploadDescriptor[] = [];
+    let index = 0;
+    for (const attachment of attachments) {
+      const name = attachment.name || `attachment-${index + 1}`;
+      const ext = path.extname(name).toLowerCase();
+      if (!attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+        index += 1;
+        continue;
+      }
+      const target = path.join(tempDir, `${index}-${safeFileName(name)}`);
+      const response = await fetch(attachment.url);
+      if (!response.ok) {
+        throw new Error(`Failed to download ${name}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(target, buffer);
+      descriptors.push({ path: target, name, type: attachment.type });
+      index += 1;
+    }
+
+    if (!descriptors.length) {
+      return [];
+    }
+
+    return processAssignmentUploads(descriptors);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }

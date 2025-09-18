@@ -14,6 +14,7 @@ export type AssignmentContextEntry = {
   fileName: string;
   content: string;
   uploadedAt: number;
+  source?: 'user' | 'instructor';
 };
 
 type AppState = {
@@ -22,11 +23,13 @@ type AppState = {
   toast: string | null;
   view: ViewState;
   assignmentContexts: Record<number, AssignmentContextEntry[]>;
+  chatbotMinimized: boolean;
   setConnected: (v: boolean) => void;
   setProfile: (p: Profile | null) => void;
   setToast: (message: string | null) => void;
   setView: (view: ViewState) => void;
   appendAssignmentContext: (assignmentId: number, entries: AssignmentContextEntry[]) => void;
+  setChatbotMinimized: (value: boolean) => void;
 };
 
 export const useStore = create<AppState>((set) => ({
@@ -35,6 +38,7 @@ export const useStore = create<AppState>((set) => ({
   toast: null,
   view: { screen: 'dashboard' },
   assignmentContexts: {},
+  chatbotMinimized: false,
   setConnected: (v) => set({ connected: v }),
   setProfile: (profile) => set({ profile }),
   setToast: (toast) => set({ toast }),
@@ -44,7 +48,28 @@ export const useStore = create<AppState>((set) => ({
     set((state) => ({
       assignmentContexts: {
         ...state.assignmentContexts,
-        [assignmentId]: [...(state.assignmentContexts[assignmentId] ?? []), ...entries]
+        [assignmentId]: (() => {
+          const existing = state.assignmentContexts[assignmentId] ?? [];
+          const seen = new Set(
+            existing.map((entry) =>
+              `${entry.source ?? 'user'}::${entry.fileName}::${entry.content}`
+            )
+          );
+          const normalisedNew = entries.map((entry) => ({
+            ...entry,
+            source: entry.source ?? 'user'
+          }));
+          const merged = [...existing];
+          for (const entry of normalisedNew) {
+            const key = `${entry.source ?? 'user'}::${entry.fileName}::${entry.content}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              merged.push(entry);
+            }
+          }
+          return merged;
+        })()
       }
-    }))
+    })),
+  setChatbotMinimized: (value) => set({ chatbotMinimized: value })
 }));

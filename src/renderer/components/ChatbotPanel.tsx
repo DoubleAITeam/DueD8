@@ -103,6 +103,8 @@ export default function ChatbotPanel({
   const activeAssignmentContexts = selectedAssignment
     ? assignmentContextsMap[selectedAssignment.id] ?? []
     : [];
+  const chatbotMinimized = useStore((s) => s.chatbotMinimized);
+  const setChatbotMinimized = useStore((s) => s.setChatbotMinimized);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
@@ -184,6 +186,37 @@ export default function ChatbotPanel({
     }, 200);
   }
 
+  if (chatbotMinimized) {
+    return (
+      <button
+        type="button"
+        onClick={() => setChatbotMinimized(false)}
+        style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          width: 72,
+          height: 72,
+          borderRadius: '50%',
+          border: 'none',
+          background: 'var(--accent)',
+          color: '#fff',
+          boxShadow: '0 24px 60px rgba(15, 23, 42, 0.2)',
+          cursor: 'pointer',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: 8
+        }}
+        title="Open Study Coach"
+      >
+        Study Coach
+      </button>
+    );
+  }
+
   return (
     <aside
       style={{
@@ -201,9 +234,38 @@ export default function ChatbotPanel({
         overflow: 'hidden'
       }}
     >
-      <header style={{ padding: '16px 20px', borderBottom: '1px solid var(--surface-border)' }}>
-        <strong>Study Coach</strong>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Model: {MODEL_NAME}</div>
+      <header
+        style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--surface-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <strong>Study Coach</strong>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Model: {MODEL_NAME}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setChatbotMinimized(true)}
+          style={{
+            border: '1px solid var(--surface-border)',
+            borderRadius: '50%',
+            width: 28,
+            height: 28,
+            background: '#fff',
+            cursor: 'pointer',
+            lineHeight: 1,
+            fontSize: 18,
+            padding: 0
+          }}
+          aria-label="Minimise Study Coach"
+        >
+          –
+        </button>
       </header>
       <div style={{ padding: '12px 20px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {suggestions.map((suggestion) => (

@@ -33,6 +33,16 @@ declare global {
           files: Array<{ path: string; name: string; type?: string }>
         ): Promise<IpcResult<Array<{ fileName: string; content: string }>>>;
       };
+      assignments: {
+        fetchInstructorContext(payload: {
+          assignmentId: number;
+          courseId: number;
+        }): Promise<
+          IpcResult<{
+            entries: Array<{ fileName: string; content: string; uploadedAt: number }>;
+          }>
+        >;
+      };
     };
   }
 
