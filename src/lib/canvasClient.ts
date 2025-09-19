@@ -67,13 +67,22 @@ export async function getCourses() {
 }
 
 /**
- * Fetch upcoming assignments for a given course.
- * TODO: Extend to handle pagination when there are more than 10 upcoming assignments.
+ * Fetch assignments for a given course.
+ * When no bucket is specified Canvas returns all assignments, but callers typically
+ * request a specific bucket (e.g. "upcoming" or "past") to limit the payload.
  */
-export async function getAssignments(courseId: number) {
+export async function getAssignments(
+  courseId: number,
+  options: { bucket?: 'upcoming' | 'past' } = { bucket: 'upcoming' }
+) {
+  const query: Record<string, string> = {};
+  if (options.bucket) {
+    query.bucket = options.bucket;
+  }
+
   return canvasGet({
     path: `/api/v1/courses/${courseId}/assignments`,
-    query: { bucket: 'upcoming' }
+    query
   }) as Promise<IpcResult<Assignment[]>>;
 }
 

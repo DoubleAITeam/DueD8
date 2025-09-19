@@ -24,6 +24,8 @@ function inNextDays(dateString: string | null, days: number) {
   return due >= now && due <= horizon;
 }
 
+type HistoricalLoadState = { status: 'idle' | 'loading' | 'ready' | 'error'; error?: string | null };
+
 export default function Dashboard() {
   const profile = useStore((s) => s.profile);
   const setConnected = useStore((s) => s.setConnected);
@@ -34,6 +36,8 @@ export default function Dashboard() {
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [courseHistoricalAssignments, setCourseHistoricalAssignments] = useState<Record<number, Assignment[]>>({});
+  const [courseHistoricalStatus, setCourseHistoricalStatus] = useState<Record<number, HistoricalLoadState>>({});
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingAssignments, setLoadingAssignments] = useState(true);
@@ -45,6 +49,15 @@ export default function Dashboard() {
       return acc;
     }, {});
   }, [courses]);
+
+  const assignmentsByCourse = useMemo(() => {
+    return assignments.reduce<Record<number, Assignment[]>>((acc, assignment) => {
+      const list = acc[assignment.course_id] ?? [];
+      list.push(assignment);
+      acc[assignment.course_id] = list;
+      return acc;
+    }, {});
+  }, [assignments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +83,27 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [setToast]);
+
+  useEffect(() => {
+    setCourseHistoricalAssignments((prev) => {
+      const next: Record<number, Assignment[]> = {};
+      courses.forEach((course) => {
+        if (prev[course.id]) {
+          next[course.id] = prev[course.id];
+        }
+      });
+      return next;
+    });
+    setCourseHistoricalStatus((prev) => {
+      const next: Record<number, HistoricalLoadState> = {};
+      courses.forEach((course) => {
+        if (prev[course.id]) {
+          next[course.id] = prev[course.id];
+        }
+      });
+      return next;
+    });
+  }, [courses]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +153,78 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [courses, setToast]);
+
+  useEffect(() => {
+    if (view.screen !== 'course' && view.screen !== 'assignment') {
+      return;
+    }
+    const courseId = view.courseId;
+    const status = courseHistoricalStatus[courseId]?.status ?? 'idle';
+    if (status === 'loading' || status === 'ready') {
+      return;
+    }
+
+    let cancelled = false;
+    setCourseHistoricalStatus((prev) => ({
+      ...prev,
+      [courseId]: { status: 'loading' }
+    }));
+
+    (async () => {
+      try {
+        const response = await getAssignments(courseId, { bucket: 'past' });
+        if (cancelled) {
+          return;
+        }
+        if (response.ok && Array.isArray(response.data)) {
+          const normalised = response.data.map((assignment) => ({
+            ...assignment,
+            course_id: courseId
+          }));
+          setCourseHistoricalAssignments((prev) => ({
+            ...prev,
+            [courseId]: normalised
+          }));
+          setCourseHistoricalStatus((prev) => ({
+            ...prev,
+            [courseId]: { status: 'ready' }
+          }));
+        } else {
+          rendererError('Past assignments request failed', response.error);
+          setCourseHistoricalAssignments((prev) => ({
+            ...prev,
+            [courseId]: []
+          }));
+          setCourseHistoricalStatus((prev) => ({
+            ...prev,
+            [courseId]: {
+              status: 'error',
+              error: response.error || 'Unable to load past assignments.'
+            }
+          }));
+        }
+      } catch (error) {
+        rendererError('Unexpected past assignments error', error);
+        if (!cancelled) {
+          setCourseHistoricalAssignments((prev) => ({
+            ...prev,
+            [courseId]: []
+          }));
+          setCourseHistoricalStatus((prev) => ({
+            ...prev,
+            [courseId]: {
+              status: 'error',
+              error: (error as Error).message || 'Unable to load past assignments.'
+            }
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseHistoricalStatus, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,19 +319,50 @@ export default function Dashboard() {
 
   const selectedAssignment = useMemo(() => {
     if (view.screen === 'assignment') {
-      return assignments.find((assignment) => assignment.id === view.assignmentId) ?? null;
+      const upcomingMatch = assignments.find((assignment) => assignment.id === view.assignmentId);
+      if (upcomingMatch) {
+        return upcomingMatch;
+      }
+      const historical = courseHistoricalAssignments[view.courseId] ?? [];
+      return historical.find((assignment) => assignment.id === view.assignmentId) ?? null;
     }
     return null;
-  }, [assignments, view]);
+  }, [assignments, courseHistoricalAssignments, view]);
 
   const assignmentCourseName = view.screen === 'assignment' ? courseLookup[view.courseId] : undefined;
 
-  const courseAssignments = useMemo(() => {
-    if (view.screen === 'course') {
-      return assignments.filter((assignment) => assignment.course_id === view.courseId);
+  const courseAssignmentGroup = useMemo(() => {
+    if (view.screen === 'course' || view.screen === 'assignment') {
+      const upcoming = assignmentsByCourse[view.courseId] ?? [];
+      const historicalRaw = courseHistoricalAssignments[view.courseId] ?? [];
+      const upcomingIds = new Set(upcoming.map((assignment) => assignment.id));
+      const historical = historicalRaw
+        .filter((assignment) => !upcomingIds.has(assignment.id))
+        .slice()
+        .sort((a, b) => {
+          const da = a.due_at ? new Date(a.due_at).getTime() : Number.NEGATIVE_INFINITY;
+          const db = b.due_at ? new Date(b.due_at).getTime() : Number.NEGATIVE_INFINITY;
+          return db - da;
+        });
+      return { upcoming, historical };
     }
-    return [];
-  }, [assignments, view]);
+    return { upcoming: [], historical: [] };
+  }, [assignmentsByCourse, courseHistoricalAssignments, view]);
+
+  const currentCourseHistoryState: HistoricalLoadState = useMemo(() => {
+    if (view.screen === 'course' || view.screen === 'assignment') {
+      return courseHistoricalStatus[view.courseId] ?? { status: 'idle', error: null };
+    }
+    return { status: 'idle', error: null };
+  }, [courseHistoricalStatus, view]);
+
+  const isCourseHistoryLoading =
+    currentCourseHistoryState.status === 'idle' || currentCourseHistoryState.status === 'loading';
+
+  const combinedCourseAssignments = useMemo(
+    () => [...courseAssignmentGroup.upcoming, ...courseAssignmentGroup.historical],
+    [courseAssignmentGroup]
+  );
 
   const isCourseView = view.screen === 'course';
   const isAssignmentView = view.screen === 'assignment';
@@ -485,13 +622,46 @@ export default function Dashboard() {
             </div>
           </div>
           <AssignmentsList
-            assignments={courseAssignments}
+            assignments={courseAssignmentGroup.upcoming}
             courseLookup={courseLookup}
             loading={loadingAssignments}
+            emptyMessage="No upcoming assignments."
             onSelect={(assignment) =>
               setView({ screen: 'assignment', courseId: assignment.course_id, assignmentId: assignment.id })
             }
           />
+          <div
+            style={{
+              border: '1px solid var(--surface-border)',
+              borderRadius: 16,
+              padding: 16,
+              background: 'rgba(255,255,255,0.8)',
+              marginTop: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}
+          >
+            <strong>Past assignments</strong>
+            {isCourseHistoryLoading ? (
+              <span style={{ color: 'var(--text-secondary)' }}>Loading past assignments…</span>
+            ) : currentCourseHistoryState.status === 'error' ? (
+              <span style={{ color: '#b91c1c' }}>
+                {currentCourseHistoryState.error ?? 'Unable to load past assignments.'}
+              </span>
+            ) : (
+              <AssignmentsList
+                assignments={courseAssignmentGroup.historical}
+                courseLookup={courseLookup}
+                loading={false}
+                emptyMessage="No archived assignments yet."
+                sortDirection="desc"
+                onSelect={(assignment) =>
+                  setView({ screen: 'assignment', courseId: assignment.course_id, assignmentId: assignment.id })
+                }
+              />
+            )}
+          </div>
         </section>
       ) : null}
 
@@ -511,7 +681,7 @@ export default function Dashboard() {
         profileName={profile?.name}
         selectedCourse={selectedCourse}
         selectedAssignment={selectedAssignment}
-        courseAssignments={courseAssignments}
+        courseAssignments={combinedCourseAssignments}
         upcomingAssignments={assignments}
         assignmentCourseName={assignmentCourseName}
         courseLookup={courseLookup}

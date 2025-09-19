@@ -12,6 +12,8 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { isActualAssignment } from '../src/shared/assignments';
+import type { AssignmentClassification } from '../src/shared/assignments';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -253,10 +255,28 @@ ipcMain.handle(
         }
       }
 
+      let classification: AssignmentClassification | null = null;
+      try {
+        const combinedText = entries.map((entry) => entry.content).join('\n\n');
+        if (
+          combinedText.trim().length ||
+          (assignment.name ?? '').toString().trim().length ||
+          description.trim().length
+        ) {
+          classification = await isActualAssignment(
+            { name: assignment.name, description },
+            combinedText
+          );
+        }
+      } catch (classificationError) {
+        mainError('assignments:classification failed', (classificationError as Error).message);
+      }
+
       return success({
         entries,
         attachments: attachmentSummaries,
-        htmlUrl: typeof assignment.html_url === 'string' ? assignment.html_url : null
+        htmlUrl: typeof assignment.html_url === 'string' ? assignment.html_url : null,
+        classification
       });
     } catch (error) {
       mainError('assignments:fetchInstructorContext failed', (error as Error).message);

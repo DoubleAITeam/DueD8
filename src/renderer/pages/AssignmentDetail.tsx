@@ -8,6 +8,8 @@ import { featureFlags } from '../../shared/featureFlags';
 import { isActualAssignment } from '../../shared/assignments';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
+const COMPLETED_FILE_EXTENSIONS = ['pdf', 'docx'] as const;
+const COMPLETED_EXTENSION_SET = new Set(COMPLETED_FILE_EXTENSIONS);
 const STUDY_COACH_LABEL = 'Study Coach';
 
 type AttachmentLink = { id: string; name: string; url: string; contentType: string | null };
@@ -199,6 +201,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   >(null);
   const [attachments, setAttachments] = useState<AttachmentLink[]>([]);
   const [canvasLink, setCanvasLink] = useState<string | null>(assignment?.html_url ?? null);
+  const [instructorWarning, setInstructorWarning] = useState<string | null>(null);
   const guardEnabled = featureFlags.assignmentSolveGuard;
   const [solveCheck, setSolveCheck] = useState<
     { status: 'idle' | 'checking' | 'allowed' | 'blocked'; reason?: string; confidence?: number }
@@ -257,6 +260,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     setAttachments([]);
     setCanvasLink(assignment?.html_url ?? null);
     setSolveCheck({ status: guardEnabled ? 'checking' : 'allowed' });
+    setInstructorWarning(null);
   }, [assignment?.id]);
 
   useEffect(() => {
@@ -284,12 +288,17 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           setAttachments([]);
           return;
         }
-        const entries = response.data.entries ?? [];
-        setAttachments(response.data.attachments ?? []);
-        if (typeof response.data.htmlUrl === 'string' && response.data.htmlUrl.length) {
-          setCanvasLink(response.data.htmlUrl);
+        const { entries = [], attachments = [], htmlUrl, classification } = response.data;
+        setAttachments(attachments);
+        setInstructorWarning(null);
+        if (typeof htmlUrl === 'string' && htmlUrl.length) {
+          setCanvasLink(htmlUrl);
         }
-        if (entries.length) {
+        if (classification && !classification.isAssignment) {
+          setInstructorWarning(
+            classification.reason || 'These materials look like instructions rather than a student deliverable.'
+          );
+        } else if (entries.length) {
           appendAssignmentContext(
             assignment.id,
             entries.map((entry) => ({ ...entry, source: 'instructor' as const }))
@@ -442,13 +451,16 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       for (const list of searchOrder) {
         for (const entry of list) {
           const ext = entry.fileName.split('.').pop()?.toLowerCase();
-          if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-            return { extension: ext as 'pdf' | 'docx' | 'txt', originalName: entry.fileName };
+          if (ext && COMPLETED_EXTENSION_SET.has(ext as (typeof COMPLETED_FILE_EXTENSIONS)[number])) {
+            return {
+              extension: ext as (typeof COMPLETED_FILE_EXTENSIONS)[number],
+              originalName: entry.fileName
+            };
           }
         }
       }
-      const fallbackName = `${assignment.name ?? 'assignment'}.txt`;
-      return { extension: 'txt' as const, originalName: fallbackName };
+      const fallbackName = `${assignment.name ?? 'assignment'}.docx`;
+      return { extension: 'docx' as const, originalName: fallbackName };
     };
 
     const { extension, originalName } = determineExtension();
@@ -744,6 +756,24 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           {solveCheck.reason ? (
             <span style={{ fontSize: 13 }}>{solveCheck.reason}</span>
           ) : null}
+        </div>
+      ) : null}
+
+      {instructorWarning ? (
+        <div
+          style={{
+            borderRadius: 14,
+            border: '1px solid #facc15',
+            background: '#fef3c7',
+            color: '#92400e',
+            padding: '14px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}
+        >
+          <strong>Instructor materials look instructional.</strong>
+          <span style={{ fontSize: 13 }}>{instructorWarning}</span>
         </div>
       ) : null}
 

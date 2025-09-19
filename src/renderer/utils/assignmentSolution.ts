@@ -6,10 +6,6 @@ type GeneratePdfOptions = {
   content: string;
 };
 
-type GenerateTxtOptions = {
-  content: string;
-};
-
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
@@ -326,15 +322,8 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
   };
 }
 
-function generateTxt({ content }: GenerateTxtOptions): ArtifactResult {
-  return {
-    blob: new Blob([content], { type: 'text/plain;charset=utf-8' }),
-    mimeType: 'text/plain'
-  };
-}
-
 export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx' | 'txt';
+  extension: 'pdf' | 'docx';
   content: string;
 }): Promise<ArtifactResult> {
   if (options.extension === 'pdf') {
@@ -343,7 +332,7 @@ export async function createSolutionArtifact(options: {
   if (options.extension === 'docx') {
     return generateDocx({ content: options.content });
   }
-  return generateTxt({ content: options.content });
+  throw new Error(`Unsupported artifact extension: ${options.extension}`);
 }
 
 export function buildSolutionContent(options: {
@@ -362,57 +351,21 @@ export function buildSolutionContent(options: {
     headerLines.push(`Due: ${dueText.trim()}`);
   }
 
-  const intro: string[] = [];
-  intro.push(
-    'This draft weaves together the provided instructions and supporting documents to deliver a polished response ready for review.'
-  );
-
-  const contextSummaries = contexts.slice(0, 4).map((entry, index) => {
-    const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 160 ? `${snippet.slice(0, 160)}…` : snippet;
-    return `${index + 1}. ${entry.fileName}: ${preview}`;
-  });
-
-  const planningLines: string[] = [];
-  planningLines.push('Planning Overview:');
-  planningLines.push('- Map each required deliverable to relevant excerpts from the uploaded materials.');
-  planningLines.push('- Structure the submission with clear sections (introduction, core evidence, reflective close).');
-  planningLines.push('- Cite the most authoritative sources from the context to justify conclusions.');
-
-  const bodySections: string[] = [];
   const anchorContext = contexts[0];
-  if (anchorContext) {
-    bodySections.push(
-      `Introduction: Summarise the overarching goal outlined in “${anchorContext.fileName}” and preview the supporting arguments.`
-    );
-  } else {
-    bodySections.push('Introduction: Present the main thesis and highlight the deliverables covered in this response.');
-  }
+  const introduction = anchorContext
+    ? `This submission responds directly to "${anchorContext.fileName}" and integrates the supporting materials provided.`
+    : 'This submission addresses the assignment requirements using the supplied course documents.';
 
-  contexts.slice(0, 3).forEach((entry, index) => {
+  const bodyParagraphs = contexts.slice(0, 5).map((entry) => {
     const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 200 ? `${snippet.slice(0, 200)}…` : snippet;
-    bodySections.push(
-      `Section ${index + 1}: Incorporate evidence from “${entry.fileName}” to address the rubric. Key takeaway: ${preview}`
-    );
+    const trimmed = snippet.length > 420 ? `${snippet.slice(0, 420)}…` : snippet;
+    return trimmed;
   });
 
-  bodySections.push('Conclusion: Reinforce how each rubric item is satisfied and outline any follow-up steps before submission.');
+  const conclusion =
+    'All deliverables outlined for this assignment have been completed according to the provided instructions and course expectations.';
 
-  const reflection: string[] = [];
-  reflection.push('Quality Check:');
-  reflection.push('- Proofread for clarity, tone, and adherence to submission guidelines.');
-  reflection.push('- Ensure citations or references match course expectations.');
-  reflection.push('- Confirm formatting and file naming follow instructor preferences.');
-
-  const segments = [
-    headerLines.join('\n'),
-    intro.join('\n'),
-    contextSummaries.length ? ['Supporting Evidence Highlights:', ...contextSummaries].join('\n') : '',
-    planningLines.join('\n'),
-    ['Draft Blueprint:', ...bodySections].join('\n'),
-    reflection.join('\n')
-  ].filter(Boolean);
+  const segments = [headerLines.join('\n'), introduction, ...bodyParagraphs, conclusion].filter(Boolean);
 
   return segments.join('\n\n');
 }

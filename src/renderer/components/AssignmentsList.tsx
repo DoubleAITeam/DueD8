@@ -6,15 +6,26 @@ type Props = {
   courseLookup?: Record<number, string>;
   loading?: boolean;
   onSelect?: (assignment: Assignment) => void;
+  emptyMessage?: string;
+  sortDirection?: 'asc' | 'desc';
 };
 
-export default function AssignmentsList({ assignments, courseLookup = {}, loading, onSelect }: Props) {
+export default function AssignmentsList({
+  assignments,
+  courseLookup = {},
+  loading,
+  onSelect,
+  emptyMessage = 'No upcoming assignments.',
+  sortDirection = 'asc'
+}: Props) {
   if (loading) return <p>Loading assignments...</p>;
-  if (!assignments?.length) return <p>No upcoming assignments.</p>;
+  if (!assignments?.length) return <p>{emptyMessage}</p>;
   const sorted = [...assignments].sort((a, b) => {
-    const da = a.due_at ? new Date(a.due_at).getTime() : Infinity;
-    const db = b.due_at ? new Date(b.due_at).getTime() : Infinity;
-    return da - db;
+    const fallback = sortDirection === 'asc' ? Infinity : -Infinity;
+    const da = a.due_at ? new Date(a.due_at).getTime() : fallback;
+    const db = b.due_at ? new Date(b.due_at).getTime() : fallback;
+    const diff = da - db;
+    return sortDirection === 'asc' ? diff : -diff;
   });
   return (
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>

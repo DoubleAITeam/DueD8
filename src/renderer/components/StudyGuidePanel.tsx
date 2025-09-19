@@ -337,7 +337,7 @@ export default function StudyGuidePanel({
     }
   };
 
-  const download = async (extension: 'pdf' | 'docx' | 'txt') => {
+  const download = async (extension: 'pdf' | 'docx') => {
     if (!markdown.trim().length) {
       return;
     }
