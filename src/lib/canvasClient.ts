@@ -78,6 +78,16 @@ export async function getAssignments(courseId: number) {
 }
 
 /**
+ * Fetch past-due assignments for a given course so users can revisit old work.
+ */
+export async function getPastAssignments(courseId: number) {
+  return canvasGet({
+    path: `/api/v1/courses/${courseId}/assignments`,
+    query: { bucket: 'past' }
+  }) as Promise<IpcResult<Assignment[]>>;
+}
+
+/**
  * Fetch Canvas calendar events inside a date window.
  */
 export async function getCalendarEvents(startISO: string, endISO: string) {

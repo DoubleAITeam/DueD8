@@ -7,7 +7,7 @@ import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
 import { featureFlags } from '../../shared/featureFlags';
 import { isActualAssignment } from '../../shared/assignments';
 
-const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
+const SUPPORTED_EXTENSIONS = ['pdf', 'docx'];
 const STUDY_COACH_LABEL = 'Study Coach';
 
 type AttachmentLink = { id: string; name: string; url: string; contentType: string | null };
@@ -443,12 +443,12 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         for (const entry of list) {
           const ext = entry.fileName.split('.').pop()?.toLowerCase();
           if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-            return { extension: ext as 'pdf' | 'docx' | 'txt', originalName: entry.fileName };
+            return { extension: ext as 'pdf' | 'docx', originalName: entry.fileName };
           }
         }
       }
-      const fallbackName = `${assignment.name ?? 'assignment'}.txt`;
-      return { extension: 'txt' as const, originalName: fallbackName };
+      const fallbackName = `${assignment.name ?? 'assignment'}.docx`;
+      return { extension: 'docx' as const, originalName: fallbackName };
     };
 
     const { extension, originalName } = determineExtension();
@@ -624,7 +624,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     });
 
     if (!supported.length) {
-      setError('Only PDF, DOCX, or TXT files are supported.');
+      setError('Only PDF or DOCX files are supported.');
       setStatus('error');
       return;
     }
@@ -634,20 +634,10 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     setError(null);
 
     try {
-      const directResults: Array<{ fileName: string; content: string }> = [];
       const descriptors: Array<{ path: string; name: string; type?: string }> = [];
 
       for (const file of supported) {
         const withPath = file as File & { path?: string };
-        const ext = file.name.split('.').pop()?.toLowerCase();
-        if (ext === 'txt' && !withPath.path) {
-          // PHASE 2: Fall back to renderer parsing when Electron omits the filesystem path.
-          const text = (await file.text()).trim();
-          if (text.length) {
-            directResults.push({ fileName: file.name, content: text });
-          }
-          continue;
-        }
         if (!withPath.path) {
           throw new Error(`Cannot process ${file.name} because no secure path was provided.`);
         }
@@ -663,7 +653,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         processed = response.data;
       }
 
-      const combined = [...directResults, ...processed].filter((entry) => entry.content.length);
+      const combined = processed.filter((entry) => entry.content.length);
       if (!combined.length) {
         throw new Error('We could not extract readable text from those files.');
       }
@@ -772,7 +762,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           transition: 'background 0.2s ease, border 0.2s ease'
         }}
       >
-        <p style={{ margin: 0, fontWeight: 600 }}>Drag & drop PDF, DOCX, or TXT files</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>Drag & drop PDF or DOCX files</p>
         <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
           {/* PHASE 2: Reinforce the drop target with an alternate upload path. */}
           or
@@ -796,7 +786,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.txt"
+          accept=".pdf,.docx"
           style={{ display: 'none' }}
           onChange={(event) => {
             handleFiles(event.target.files ?? []);

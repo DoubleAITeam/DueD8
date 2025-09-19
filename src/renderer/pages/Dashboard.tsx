@@ -8,7 +8,7 @@ import { deriveCourseGrade } from '../../lib/gradeUtils';
 import { DEFAULT_GRADE_SCALE, parseSyllabusScale } from '../../lib/syllabusParser';
 import { rendererError, rendererLog } from '../../lib/logger';
 import { getPlatformBridge } from '../../lib/platformBridge';
-import { getAssignments, getCalendarEvents, getCourses } from '../../lib/canvasClient';
+import { getAssignments, getCalendarEvents, getCourses, getPastAssignments } from '../../lib/canvasClient';
 import type { Assignment, CalendarEvent, Course } from '../../lib/canvasClient';
 import { useStore } from '../state/store';
 
@@ -33,7 +33,8 @@ export default function Dashboard() {
   const setView = useStore((s) => s.setView);
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [allAssignments, setAllAssignments] = useState<Assignment[]>([]);
+  const [upcomingAssignments, setUpcomingAssignments] = useState<Assignment[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingAssignments, setLoadingAssignments] = useState(true);
@@ -77,32 +78,67 @@ export default function Dashboard() {
     async function loadAssignments() {
       setLoadingAssignments(true);
       if (!courses.length) {
-        setAssignments([]);
+        setAllAssignments([]);
+        setUpcomingAssignments([]);
         setLoadingAssignments(false);
         return;
       }
 
       try {
-        const responses = await Promise.all(courses.map((course) => getAssignments(course.id)));
+        const responses = await Promise.all(
+          courses.map((course) =>
+            Promise.all([getAssignments(course.id), getPastAssignments(course.id)])
+          )
+        );
         if (cancelled) return;
-        const allAssignments: Assignment[] = [];
-        responses.forEach((res, index) => {
-          if (res.ok && Array.isArray(res.data)) {
-            const filtered = res.data.filter((assignment) => inNextDays(assignment.due_at, 14));
-            allAssignments.push(...filtered.map((a) => ({ ...a, course_id: courses[index].id })));
-          } else {
-            rendererError('Assignments request failed', res.error);
+        const combinedById = new Map<number, Assignment>();
+        const nextAssignments: Assignment[] = [];
+
+        responses.forEach(([upcomingRes, pastRes], index) => {
+          const courseId = courses[index].id;
+
+          if (upcomingRes.ok && Array.isArray(upcomingRes.data)) {
+            upcomingRes.data.forEach((assignment) => {
+              const withCourse = { ...assignment, course_id: courseId };
+              combinedById.set(withCourse.id, withCourse);
+              if (inNextDays(withCourse.due_at, 14)) {
+                nextAssignments.push(withCourse);
+              }
+            });
+          } else if (!upcomingRes.ok) {
+            rendererError('Upcoming assignments request failed', upcomingRes.error);
+          }
+
+          if (pastRes.ok && Array.isArray(pastRes.data)) {
+            pastRes.data.forEach((assignment) => {
+              const withCourse = { ...assignment, course_id: courseId };
+              combinedById.set(withCourse.id, withCourse);
+            });
+          } else if (!pastRes.ok) {
+            rendererError('Past assignments request failed', pastRes.error);
           }
         });
-        allAssignments.sort((a, b) => {
-          const da = a.due_at ? new Date(a.due_at).getTime() : Number.POSITIVE_INFINITY;
-          const db = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
-          return da - db;
-        });
-        setAssignments(allAssignments);
+
+        const sortAssignments = (list: Assignment[]) => {
+          const now = Date.now();
+          return [...list].sort((a, b) => {
+            const da = a.due_at ? new Date(a.due_at).getTime() : Number.POSITIVE_INFINITY;
+            const db = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
+            const aPast = da < now;
+            const bPast = db < now;
+            if (aPast !== bPast) {
+              return aPast ? 1 : -1;
+            }
+            return da - db;
+          });
+        };
+
+        setAllAssignments(sortAssignments(Array.from(combinedById.values())));
+        setUpcomingAssignments(sortAssignments(nextAssignments));
       } catch (error) {
         rendererError('Unexpected assignments error', error);
-        setAssignments([]);
+        setAllAssignments([]);
+        setUpcomingAssignments([]);
         if (!cancelled) {
           setToast('Unable to load Canvas assignments.');
         }
@@ -170,7 +206,8 @@ export default function Dashboard() {
     setConnected(false);
     setProfile(null);
     setCourses([]);
-    setAssignments([]);
+    setAllAssignments([]);
+    setUpcomingAssignments([]);
     setEvents([]);
     setToast('Disconnected from Canvas.');
   }
@@ -189,7 +226,7 @@ export default function Dashboard() {
         source: 'event'
       });
     });
-    assignments.forEach((assignment) => {
+    upcomingAssignments.forEach((assignment) => {
       if (!assignment.due_at) return;
       merged.push({
         id: `assignment-${assignment.id}`,
@@ -201,7 +238,7 @@ export default function Dashboard() {
       });
     });
     return merged.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
-  }, [events, assignments, courseLookup]);
+  }, [events, upcomingAssignments, courseLookup]);
 
   const isDashboardView = view.screen === 'dashboard';
   const selectedCourse = useMemo(() => {
@@ -213,19 +250,19 @@ export default function Dashboard() {
 
   const selectedAssignment = useMemo(() => {
     if (view.screen === 'assignment') {
-      return assignments.find((assignment) => assignment.id === view.assignmentId) ?? null;
+      return allAssignments.find((assignment) => assignment.id === view.assignmentId) ?? null;
     }
     return null;
-  }, [assignments, view]);
+  }, [allAssignments, view]);
 
   const assignmentCourseName = view.screen === 'assignment' ? courseLookup[view.courseId] : undefined;
 
   const courseAssignments = useMemo(() => {
     if (view.screen === 'course') {
-      return assignments.filter((assignment) => assignment.course_id === view.courseId);
+      return allAssignments.filter((assignment) => assignment.course_id === view.courseId);
     }
     return [];
-  }, [assignments, view]);
+  }, [allAssignments, view]);
 
   const isCourseView = view.screen === 'course';
   const isAssignmentView = view.screen === 'assignment';
@@ -408,7 +445,7 @@ export default function Dashboard() {
             >
               <h2 style={{ marginTop: 0 }}>Upcoming Assignments</h2>
               <AssignmentsList
-                assignments={assignments}
+                assignments={upcomingAssignments}
                 courseLookup={courseLookup}
                 loading={loadingAssignments}
                 onSelect={(assignment) =>
@@ -488,6 +525,7 @@ export default function Dashboard() {
             assignments={courseAssignments}
             courseLookup={courseLookup}
             loading={loadingAssignments}
+            emptyMessage="No assignments for this course yet."
             onSelect={(assignment) =>
               setView({ screen: 'assignment', courseId: assignment.course_id, assignmentId: assignment.id })
             }
@@ -512,7 +550,7 @@ export default function Dashboard() {
         selectedCourse={selectedCourse}
         selectedAssignment={selectedAssignment}
         courseAssignments={courseAssignments}
-        upcomingAssignments={assignments}
+        upcomingAssignments={upcomingAssignments}
         assignmentCourseName={assignmentCourseName}
         courseLookup={courseLookup}
       />

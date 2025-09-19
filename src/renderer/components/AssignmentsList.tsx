@@ -6,11 +6,18 @@ type Props = {
   courseLookup?: Record<number, string>;
   loading?: boolean;
   onSelect?: (assignment: Assignment) => void;
+  emptyMessage?: string;
 };
 
-export default function AssignmentsList({ assignments, courseLookup = {}, loading, onSelect }: Props) {
+export default function AssignmentsList({
+  assignments,
+  courseLookup = {},
+  loading,
+  onSelect,
+  emptyMessage = 'No upcoming assignments.'
+}: Props) {
   if (loading) return <p>Loading assignments...</p>;
-  if (!assignments?.length) return <p>No upcoming assignments.</p>;
+  if (!assignments?.length) return <p>{emptyMessage}</p>;
   const sorted = [...assignments].sort((a, b) => {
     const da = a.due_at ? new Date(a.due_at).getTime() : Infinity;
     const db = b.due_at ? new Date(b.due_at).getTime() : Infinity;
