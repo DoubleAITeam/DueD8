@@ -3,8 +3,8 @@ export type AssignmentLike = {
   description?: string | null;
 };
 
-export type AssignmentClassification = {
-  isAssignment: boolean;
+export type AssignmentSolveability = {
+  classification: 'instructions_only' | 'solvable_assignment';
   confidence: number;
   reason: string;
   signals: {
@@ -59,7 +59,7 @@ function logistic(value: number) {
 export async function isActualAssignment(
   assignment: AssignmentLike | null | undefined,
   extractedText: string
-): Promise<AssignmentClassification> {
+): Promise<AssignmentSolveability> {
   const name = assignment?.name ?? '';
   const description = assignment?.description ?? '';
   const combined = [name, description, extractedText].filter(Boolean).join('\n');
@@ -128,7 +128,7 @@ export async function isActualAssignment(
   }
 
   return {
-    isAssignment,
+    classification: isAssignment ? 'solvable_assignment' : 'instructions_only',
     confidence: combinedConfidence,
     reason,
     signals: {
