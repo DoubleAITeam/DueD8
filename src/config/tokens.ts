@@ -1,0 +1,3 @@
+export const MAX_TOKENS_PER_ASSIGNMENT = 6000;
+export const MAX_TOKENS_PER_24H = 12000;
+export const GRACE_COMPLETION_TOKENS = 400;

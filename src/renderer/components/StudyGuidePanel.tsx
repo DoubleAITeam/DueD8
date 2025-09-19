@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createSolutionArtifact } from '../utils/assignmentSolution';
 import type { StudyGuidePlan } from '../utils/studyGuide';
 import { convertGuideToMarkdown, markdownToPlainText } from '../utils/studyGuide';
 
@@ -337,19 +336,6 @@ export default function StudyGuidePanel({
     }
   };
 
-  const download = async (extension: 'pdf' | 'docx' | 'txt') => {
-    if (!markdown.trim().length) {
-      return;
-    }
-    const artifact = await createSolutionArtifact({ extension, content: plainText });
-    const blobUrl = URL.createObjectURL(artifact.blob);
-    const anchor = document.createElement('a');
-    anchor.href = blobUrl;
-    anchor.download = `${plan?.heading.replace(/[^a-zA-Z0-9._-]+/g, '-') ?? 'StudyCoachGuide'}.${extension}`;
-    anchor.click();
-    URL.revokeObjectURL(blobUrl);
-  };
-
   const printGuide = () => {
     window.print();
   };
@@ -367,12 +353,6 @@ export default function StudyGuidePanel({
         <div className="study-guide-buttons">
           <button type="button" onClick={copyAll} disabled={!markdown.trim().length}>
             Copy all
-          </button>
-          <button type="button" onClick={() => download('docx')} disabled={!markdown.trim().length}>
-            Download as DOCX
-          </button>
-          <button type="button" onClick={() => download('pdf')} disabled={!markdown.trim().length}>
-            Download as PDF
           </button>
           <button type="button" onClick={printGuide} disabled={!markdown.trim().length}>
             Print

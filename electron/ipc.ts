@@ -1,5 +1,5 @@
 // src/main/ipc.ts
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
 import { getDb } from './db';
@@ -12,6 +12,9 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { getTokenUsageSummary, logTokenUsage } from './tokenUsage';
+import { createOrUpdateGoogleDoc, getStoredGoogleDocLink } from './googleDocs';
+import { exportSolutionPdf } from './pdfExport';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -103,6 +106,31 @@ const AssignmentInstructorContextRequest = z.object({
   courseId: z.number().int().positive()
 });
 
+const TokenUsageRequest = z.object({
+  assignmentId: z.number().int().positive()
+});
+
+const LogTokenUsageRequest = z.object({
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive().optional(),
+  tokens: z.number().min(0)
+});
+
+const GoogleDocRequest = z.object({
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive().optional(),
+  title: z.string().min(1),
+  plainText: z.string()
+});
+
+const PdfExportRequest = z.object({
+  assignmentId: z.number().int().positive(),
+  courseCode: z.string().min(1),
+  assignmentSlug: z.string().min(1),
+  html: z.string().min(1),
+  title: z.string().min(1)
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -191,7 +219,7 @@ ipcMain.handle(
           const name =
             attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
           const ext = name ? path.extname(name).toLowerCase() : '';
-          if (!name || !attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+          if (!name || !attachment.url || !['.pdf', '.docx'].includes(ext)) {
             return null;
           }
           return {
@@ -264,6 +292,86 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle('assignments:getTokenUsage', async (_event, payload): Promise<IpcResult<{ assignmentTotal: number; last24hTotal: number }>> => {
+  try {
+    const { assignmentId } = TokenUsageRequest.parse(payload);
+    const summary = getTokenUsageSummary(assignmentId);
+    return success(summary);
+  } catch (error) {
+    mainError('assignments:getTokenUsage failed', (error as Error).message);
+    return failure('Failed to read token usage');
+  }
+});
+
+ipcMain.handle('assignments:logTokenUsage', async (_event, payload): Promise<IpcResult<{ recorded: boolean; tokens: number }>> => {
+  try {
+    const { assignmentId, courseId, tokens } = LogTokenUsageRequest.parse(payload);
+    const result = logTokenUsage({ assignmentId, courseId: courseId ?? null, tokens });
+    return success(result);
+  } catch (error) {
+    mainError('assignments:logTokenUsage failed', (error as Error).message);
+    return failure('Failed to record token usage');
+  }
+});
+
+ipcMain.handle('assignments:getGoogleDocLink', async (_event, payload): Promise<IpcResult<{ url: string | null }>> => {
+  try {
+    const { assignmentId } = TokenUsageRequest.parse(payload);
+    const url = getStoredGoogleDocLink(assignmentId);
+    return success({ url });
+  } catch (error) {
+    mainError('assignments:getGoogleDocLink failed', (error as Error).message);
+    return failure('Failed to read Google Doc link');
+  }
+});
+
+ipcMain.handle(
+  'assignments:createGoogleDoc',
+  async (_event, payload): Promise<IpcResult<{ documentId: string; url: string; status: 'created' | 'updated' }>> => {
+    try {
+      const parsed = GoogleDocRequest.parse(payload);
+      const result = await createOrUpdateGoogleDoc(parsed);
+      return success(result);
+    } catch (error) {
+      mainError('assignments:createGoogleDoc failed', (error as Error).message);
+      return failure((error as Error).message || 'Failed to create Google Doc');
+    }
+  }
+);
+
+function safeSegment(value: string) {
+  return value
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .trim();
+}
+
+ipcMain.handle('assignments:exportPdf', async (event, payload): Promise<IpcResult<{ cancelled: boolean; filePath?: string }>> => {
+  try {
+    const parsed = PdfExportRequest.parse(payload);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      return failure('Unable to determine active window');
+    }
+    const courseSegment = safeSegment(parsed.courseCode) || 'COURSE';
+    const assignmentSegment = safeSegment(parsed.assignmentSlug) || 'assignment';
+    const now = new Date();
+    const dateSegment = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const defaultFileName = `${courseSegment}_${assignmentSegment}_${dateSegment}`;
+    const result = await exportSolutionPdf({
+      browserWindow: window,
+      html: parsed.html,
+      title: parsed.title,
+      defaultFileName
+    });
+    return success(result);
+  } catch (error) {
+    mainError('assignments:exportPdf failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to generate PDF');
+  }
+});
 
 ipcMain.handle('students.add', (_e, payload) => {
   const s = StudentSchema.parse(payload);

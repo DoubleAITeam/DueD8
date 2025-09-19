@@ -39,6 +39,25 @@ contextBridge.exposeInMainWorld('dued8', {
 
   assignments: {
     fetchInstructorContext: (payload: { assignmentId: number; courseId: number }) =>
-      ipcRenderer.invoke('assignments:fetchInstructorContext', payload)
+      ipcRenderer.invoke('assignments:fetchInstructorContext', payload),
+    getTokenUsage: (payload: { assignmentId: number }) =>
+      ipcRenderer.invoke('assignments:getTokenUsage', payload),
+    logTokenUsage: (payload: { assignmentId: number; courseId?: number | null; tokens: number }) =>
+      ipcRenderer.invoke('assignments:logTokenUsage', payload),
+    getGoogleDocLink: (payload: { assignmentId: number }) =>
+      ipcRenderer.invoke('assignments:getGoogleDocLink', payload),
+    createGoogleDoc: (payload: {
+      assignmentId: number;
+      courseId?: number | null;
+      title: string;
+      plainText: string;
+    }) => ipcRenderer.invoke('assignments:createGoogleDoc', payload),
+    exportPdf: (payload: {
+      assignmentId: number;
+      courseCode: string;
+      assignmentSlug: string;
+      html: string;
+      title: string;
+    }) => ipcRenderer.invoke('assignments:exportPdf', payload)
   }
 });

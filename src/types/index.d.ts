@@ -44,6 +44,30 @@ declare global {
             htmlUrl: string | null;
           }>
         >;
+        getTokenUsage(payload: { assignmentId: number }): Promise<
+          IpcResult<{ assignmentTotal: number; last24hTotal: number }>
+        >;
+        logTokenUsage(payload: {
+          assignmentId: number;
+          courseId?: number | null;
+          tokens: number;
+        }): Promise<IpcResult<{ recorded: boolean; tokens: number }>>;
+        getGoogleDocLink(payload: { assignmentId: number }): Promise<
+          IpcResult<{ url: string | null }>
+        >;
+        createGoogleDoc(payload: {
+          assignmentId: number;
+          courseId?: number | null;
+          title: string;
+          plainText: string;
+        }): Promise<IpcResult<{ documentId: string; url: string; status: 'created' | 'updated' }>>;
+        exportPdf(payload: {
+          assignmentId: number;
+          courseCode: string;
+          assignmentSlug: string;
+          html: string;
+          title: string;
+        }): Promise<IpcResult<{ cancelled: boolean; filePath?: string }>>;
       };
     };
   }
