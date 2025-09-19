@@ -75,3 +75,12 @@ npm run build
 
 The build command produces production-ready Electron and renderer bundles. Use `npm run preview` to run the built assets without
 the Vite dev server.
+
+## Assignment actions and generation behavior
+- Assignment classification now runs in the Electron main process. When the classifier flags a file as instructions-only, the
+  **Generate completed assignment** button stays disabled with a tooltip and an inline note directs students to the study guide.
+- Completed submissions are generated only on demand and provide both Google Doc (.docx) and PDF downloads styled to match the
+  prompt. Each document includes mirrored numbering, default APA7 citations when no style is detected, and links back to Canvas
+  attachments.
+- The generation panel shows non-blocking progress with cancel/resume controls. If a run exhausts the free token budget, the
+  rendered sections remain polished and an upgrade banner surfaces before continuing.

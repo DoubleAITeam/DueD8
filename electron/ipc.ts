@@ -12,6 +12,7 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { isActualAssignment } from '../src/shared/assignments';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -102,6 +103,55 @@ const AssignmentInstructorContextRequest = z.object({
   assignmentId: z.number().int().positive(),
   courseId: z.number().int().positive()
 });
+
+const AssignmentClassificationRequest = z.object({
+  assignment: z
+    .object({
+      name: z.string().optional().nullable(),
+      description: z.string().optional().nullable()
+    })
+    .nullable()
+    .optional(),
+  contexts: z
+    .array(
+      z.object({
+        fileName: z.string().optional().nullable(),
+        content: z.string()
+      })
+    )
+    .optional()
+    .default([])
+});
+
+ipcMain.handle(
+  'assignments:classify',
+  async (
+    _event,
+    payload
+  ): Promise<
+    IpcResult<{
+      type: 'instructions_only' | 'solvable_assignment';
+      confidence: number;
+      reason: string;
+    }>
+  > => {
+    try {
+      const { assignment, contexts } = AssignmentClassificationRequest.parse(payload ?? {});
+      const truncated = contexts.map((entry) => entry.content.slice(0, 20000));
+      const combinedText = truncated.join('\n\n');
+      const classification = await isActualAssignment(assignment ?? null, combinedText);
+      const type = classification.isAssignment ? 'solvable_assignment' : 'instructions_only';
+      return success({
+        type,
+        confidence: classification.confidence,
+        reason: classification.reason
+      });
+    } catch (error) {
+      mainError('assignments:classify failed', (error as Error).message);
+      return failure((error as Error).message || 'Classification failed');
+    }
+  }
+);
 
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {

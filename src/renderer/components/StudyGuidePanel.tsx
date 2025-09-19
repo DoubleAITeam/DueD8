@@ -18,6 +18,7 @@ type StudyGuidePanelProps = {
   onGenerate: () => void;
   canGenerate: boolean;
   error?: string | null;
+  showGenerateAction?: boolean;
 };
 
 type CollapsedState = Record<string, boolean>;
@@ -276,7 +277,8 @@ export default function StudyGuidePanel({
   progress,
   onGenerate,
   canGenerate,
-  error
+  error,
+  showGenerateAction = true
 }: StudyGuidePanelProps) {
   const [collapsed, setCollapsed] = useState<CollapsedState>({});
   const [markdown, setMarkdown] = useState<string>('');
@@ -395,9 +397,15 @@ export default function StudyGuidePanel({
                 Generate a personalised walkthrough with our Study Coach. It blends instructor materials and your uploads into a
                 single plan.
               </p>
-              <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
-                {status === 'generating' ? 'Generating…' : 'Generate guide'}
-              </button>
+              {showGenerateAction ? (
+                <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
+                  {status === 'generating' ? 'Generating…' : 'Generate guide'}
+                </button>
+              ) : (
+                <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  Use the Generate guide button above to create a plan.
+                </span>
+              )}
               {error ? <div className="study-guide-error">{error}</div> : null}
             </div>
           ) : (
@@ -406,9 +414,11 @@ export default function StudyGuidePanel({
                 <h2>{plan.heading}</h2>
                 <MarkdownBlock markdown={plan.overview} />
                 <div className="study-guide-utility">
-                  <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
-                    {status === 'generating' ? 'Regenerating…' : 'Regenerate guide'}
-                  </button>
+                  {showGenerateAction ? (
+                    <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
+                      {status === 'generating' ? 'Regenerating…' : 'Regenerate guide'}
+                    </button>
+                  ) : null}
                   {status === 'generating' && progress ? (
                     <div className="study-guide-progress">
                       <span>Generating…</span>
