@@ -45,6 +45,58 @@ declare global {
           }>
         >;
       };
+      tokens: {
+        requestSolve(payload: {
+          assignmentId: number;
+          tokensRequested: number;
+          userEmail?: string | null;
+        }): Promise<
+          IpcResult<{
+            allowed: boolean;
+            grantedTokens: number;
+            limit?: 'assignment' | 'daily';
+            remainingAssignmentTokens: number;
+            remainingDailyTokens: number;
+            requestedTokens: number;
+            graceApplied?: boolean;
+          }>
+        >;
+        logUsage(payload: {
+          assignmentId: number;
+          tokensUsed: number;
+          userEmail?: string | null;
+        }): Promise<IpcResult<{ logged: boolean }>>;
+      };
+      exports: {
+        downloadPdf(payload: {
+          assignmentId: number;
+          assignmentName?: string | null;
+          courseName?: string | null;
+          content: string;
+        }): Promise<IpcResult<{ cancelled: boolean; filePath?: string }>>;
+        createGoogleDoc(payload: {
+          assignmentId: number;
+          title: string;
+          content: string;
+          accountEmail?: string | null;
+        }): Promise<
+          IpcResult<
+            | { status: 'auth-required' }
+            | { status: 'ok'; documentId: string; documentUrl: string }
+          >
+        >;
+        connectGoogle(payload?: { accountEmail?: string | null }): Promise<
+          IpcResult<{ connected: boolean; accountEmail?: string | null }>
+        >;
+        getGoogleStatus(): Promise<
+          IpcResult<{ connected: boolean; accountEmail?: string | null }>
+        >;
+        getGoogleDoc(payload: {
+          assignmentId: number;
+        }): Promise<
+          IpcResult<{ documentId: string; documentUrl: string } | null>
+        >;
+      };
     };
   }
 

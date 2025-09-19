@@ -6,10 +6,6 @@ type GeneratePdfOptions = {
   content: string;
 };
 
-type GenerateTxtOptions = {
-  content: string;
-};
-
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
@@ -326,15 +322,8 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
   };
 }
 
-function generateTxt({ content }: GenerateTxtOptions): ArtifactResult {
-  return {
-    blob: new Blob([content], { type: 'text/plain;charset=utf-8' }),
-    mimeType: 'text/plain'
-  };
-}
-
 export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx' | 'txt';
+  extension: 'pdf' | 'docx';
   content: string;
 }): Promise<ArtifactResult> {
   if (options.extension === 'pdf') {
@@ -343,7 +332,7 @@ export async function createSolutionArtifact(options: {
   if (options.extension === 'docx') {
     return generateDocx({ content: options.content });
   }
-  return generateTxt({ content: options.content });
+  throw new Error(`Unsupported extension: ${options.extension}`);
 }
 
 export function buildSolutionContent(options: {
@@ -415,4 +404,15 @@ export function buildSolutionContent(options: {
   ].filter(Boolean);
 
   return segments.join('\n\n');
+}
+
+export function estimateTokenCount(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed.length) {
+    return 0;
+  }
+  const words = trimmed.split(/\s+/).filter(Boolean).length;
+  const tokensByWords = Math.ceil(words * 1.2);
+  const tokensByChars = Math.ceil(trimmed.length / 4);
+  return Math.max(tokensByWords, tokensByChars);
 }

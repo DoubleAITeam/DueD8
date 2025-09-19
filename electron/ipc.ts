@@ -12,6 +12,14 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { evaluateTokenRequest, normaliseEmail, recordTokenUsage } from './tokenUsage';
+import {
+  connectGoogleAccount,
+  createGoogleDoc as createGoogleDocExport,
+  getGoogleConnection,
+  getAssignmentGoogleDoc,
+  promptForPdfSave
+} from './exports';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -103,6 +111,40 @@ const AssignmentInstructorContextRequest = z.object({
   courseId: z.number().int().positive()
 });
 
+const TokenRequestSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  tokensRequested: z.number().int().nonnegative(),
+  userEmail: z.string().optional().nullable()
+});
+
+const TokenLogSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  tokensUsed: z.number().int().nonnegative(),
+  userEmail: z.string().optional().nullable()
+});
+
+const PdfExportSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  assignmentName: z.string().optional().nullable(),
+  courseName: z.string().optional().nullable(),
+  content: z.string().min(1)
+});
+
+const GoogleDocSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  title: z.string().min(1),
+  content: z.string().min(1),
+  accountEmail: z.string().optional().nullable()
+});
+
+const GoogleConnectSchema = z.object({
+  accountEmail: z.string().optional().nullable()
+});
+
+const GoogleDocLookupSchema = z.object({
+  assignmentId: z.number().int().positive()
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -112,6 +154,88 @@ ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResul
   } catch (error) {
     mainError('files:processUploads failed', (error as Error).message);
     return failure((error as Error).message || 'Failed to process uploads');
+  }
+});
+
+ipcMain.handle('tokens:requestSolve', async (_event, payload) => {
+  try {
+    const { assignmentId, tokensRequested, userEmail } = TokenRequestSchema.parse(payload);
+    const evaluation = evaluateTokenRequest({
+      assignmentId,
+      tokensRequested,
+      userEmail
+    });
+    return success(evaluation);
+  } catch (error) {
+    mainError('tokens:requestSolve failed', (error as Error).message);
+    return failure('Failed to evaluate token request');
+  }
+});
+
+ipcMain.handle('tokens:logUsage', async (_event, payload) => {
+  try {
+    const { assignmentId, tokensUsed, userEmail } = TokenLogSchema.parse(payload);
+    if (tokensUsed > 0) {
+      recordTokenUsage(normaliseEmail(userEmail), assignmentId, tokensUsed);
+    }
+    return success({ logged: true });
+  } catch (error) {
+    mainError('tokens:logUsage failed', (error as Error).message);
+    return failure('Failed to log token usage');
+  }
+});
+
+ipcMain.handle('exports:downloadPdf', async (_event, payload) => {
+  try {
+    const { assignmentName, courseName, content } = PdfExportSchema.parse(payload);
+    const result = await promptForPdfSave({ assignmentName, courseName, content });
+    return success(result);
+  } catch (error) {
+    mainError('exports:downloadPdf failed', (error as Error).message);
+    return failure('Failed to export PDF');
+  }
+});
+
+ipcMain.handle('exports:createGoogleDoc', async (_event, payload) => {
+  try {
+    const { assignmentId, title, content, accountEmail } = GoogleDocSchema.parse(payload);
+    const result = await createGoogleDocExport({ assignmentId, title, content, accountEmail });
+    return success(result);
+  } catch (error) {
+    mainError('exports:createGoogleDoc failed', (error as Error).message);
+    return failure('Failed to create Google Doc');
+  }
+});
+
+ipcMain.handle('exports:connectGoogle', async (_event, payload) => {
+  try {
+    const { accountEmail } = GoogleConnectSchema.parse(payload ?? {});
+    const status = connectGoogleAccount(accountEmail ?? null);
+    return success(status);
+  } catch (error) {
+    mainError('exports:connectGoogle failed', (error as Error).message);
+    return failure('Failed to connect Google account');
+  }
+});
+
+ipcMain.handle('exports:getGoogleStatus', async () => {
+  try {
+    const status = getGoogleConnection();
+    return success(status);
+  } catch (error) {
+    mainError('exports:getGoogleStatus failed', (error as Error).message);
+    return failure('Failed to read Google status');
+  }
+});
+
+ipcMain.handle('exports:getGoogleDoc', async (_event, payload) => {
+  try {
+    const { assignmentId } = GoogleDocLookupSchema.parse(payload);
+    const doc = getAssignmentGoogleDoc(assignmentId);
+    return success(doc ?? null);
+  } catch (error) {
+    mainError('exports:getGoogleDoc failed', (error as Error).message);
+    return failure('Failed to read Google document');
   }
 });
 
