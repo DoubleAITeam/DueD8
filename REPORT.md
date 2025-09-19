@@ -5,6 +5,13 @@
 - Exposed a typed preload bridge for Canvas IPC, introduced renderer logger/toast utilities, and expanded the Zustand store to track connection state, profile data, and transient toasts.
 - Rebuilt the Connect and Dashboard screens to validate tokens, render Canvas profile/courses/assignments/calendar data, and support disconnect flows using the new IPC client (`src/lib/canvasClient.ts`).
 - Improved developer guidance in `README.md` and created shared logging/type helpers across the codebase.
+- Refined assignment detection, manual generation actions, and export formatting across the renderer and shared utilities.
+
+## Assignment actions and generation behavior
+- Added a secure IPC endpoint (`assignments:classify`) so the main process classifies instructions vs. solvable prompts before the renderer enables completion.
+- Replaced the auto-run solver with explicit "Generate completed assignment" and "Generate guide" actions, including tooltips, neutral messaging for instructions-only files, and cancellable progress feedback.
+- Introduced a submission formatter that mirrors numbering, styles, and references, then builds both DOCX and PDF exports on demand without precomputing output.
+- Surfaced missing-source and upgrade notices alongside dual download links, while keeping guides accessible once supporting context is available.
 
 ## Files touched
 - Added: `electron/canvasService.ts`, `electron/logger.ts`, `src/lib/logger.ts`, `src/lib/canvasClient.ts`, `src/shared/ipc.ts`, `src/types/index.d.ts`, `REPORT.md`.

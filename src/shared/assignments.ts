@@ -3,8 +3,10 @@ export type AssignmentLike = {
   description?: string | null;
 };
 
-export type AssignmentClassification = {
-  isAssignment: boolean;
+export type AssignmentDetectionKind = 'instructions_only' | 'solvable_assignment';
+
+export type AssignmentDetectionResult = {
+  kind: AssignmentDetectionKind;
   confidence: number;
   reason: string;
   signals: {
@@ -56,10 +58,10 @@ function logistic(value: number) {
   return 1 / (1 + Math.exp(-value));
 }
 
-export async function isActualAssignment(
+export async function classifyAssignment(
   assignment: AssignmentLike | null | undefined,
   extractedText: string
-): Promise<AssignmentClassification> {
+): Promise<AssignmentDetectionResult> {
   const name = assignment?.name ?? '';
   const description = assignment?.description ?? '';
   const combined = [name, description, extractedText].filter(Boolean).join('\n');
@@ -128,7 +130,7 @@ export async function isActualAssignment(
   }
 
   return {
-    isAssignment,
+    kind: isAssignment ? 'solvable_assignment' : 'instructions_only',
     confidence: combinedConfidence,
     reason,
     signals: {

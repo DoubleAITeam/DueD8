@@ -44,6 +44,22 @@ declare global {
             htmlUrl: string | null;
           }>
         >;
+        classify(payload: {
+          assignment?: { name?: string | null; description?: string | null } | null;
+          extractedText?: string | null;
+        }): Promise<
+          IpcResult<{
+            kind: 'instructions_only' | 'solvable_assignment';
+            confidence: number;
+            reason: string;
+            signals: {
+              heuristicScore: number;
+              llmScore: number;
+              positiveKeywords: string[];
+              negativeKeywords: string[];
+            };
+          }>
+        >;
       };
     };
   }

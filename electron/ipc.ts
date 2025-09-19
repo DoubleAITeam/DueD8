@@ -7,6 +7,7 @@ import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from '
 import type { CanvasGetPayload } from './canvasService';
 import type { IpcResult } from '../src/shared/ipc';
 import { mainError, mainLog } from './logger';
+import { classifyAssignment } from '../src/shared/assignments';
 import {
   processAssignmentUploads,
   processRemoteAttachments,
@@ -103,6 +104,17 @@ const AssignmentInstructorContextRequest = z.object({
   courseId: z.number().int().positive()
 });
 
+const AssignmentClassificationRequest = z.object({
+  assignment: z
+    .object({
+      name: z.string().optional().nullable(),
+      description: z.string().optional().nullable()
+    })
+    .optional()
+    .nullable(),
+  extractedText: z.string().optional().nullable()
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -112,6 +124,17 @@ ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResul
   } catch (error) {
     mainError('files:processUploads failed', (error as Error).message);
     return failure((error as Error).message || 'Failed to process uploads');
+  }
+});
+
+ipcMain.handle('assignments:classify', async (_event, payload): Promise<IpcResult<ReturnType<typeof classifyAssignment> extends Promise<infer R> ? R : never>> => {
+  try {
+    const parsed = AssignmentClassificationRequest.parse(payload);
+    const result = await classifyAssignment(parsed.assignment ?? null, parsed.extractedText ?? '');
+    return success(result);
+  } catch (error) {
+    mainError('assignments:classify failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to analyse assignment');
   }
 });
 

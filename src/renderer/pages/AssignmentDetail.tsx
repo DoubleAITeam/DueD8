@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
-import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
+import { createSubmissionArtifacts } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
 import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
 import { featureFlags } from '../../shared/featureFlags';
-import { isActualAssignment } from '../../shared/assignments';
+import { buildSubmissionDocument } from '../utils/submissionFormatter';
+import type { AssignmentDetectionResult } from '../../shared/assignments';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx'];
 const STUDY_COACH_LABEL = 'Study Coach';
@@ -177,9 +178,10 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   );
   const setToast = useStore((s) => s.setToast);
   const inputRef = useRef<HTMLInputElement>(null);
-  const solutionUrlRef = useRef<string | null>(null);
-  const lastContextSignatureRef = useRef<string | null>(null);
-  const guardSignatureRef = useRef<string | null>(null);
+  const solutionUrlsRef = useRef<{ docx: string | null; pdf: string | null }>({ docx: null, pdf: null });
+  const classificationSignatureRef = useRef<string | null>(null);
+  const activeGenerationRef = useRef<number | null>(null);
+  const generationCancelledRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -192,17 +194,32 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const [guideProgress, setGuideProgress] = useState<{ current: number; total: number; label: string } | null>(null);
   const [guideError, setGuideError] = useState<string | null>(null);
   const activeGuideRunRef = useRef<number>(0);
-  const [solutionStatus, setSolutionStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle');
+  const [solutionStatus, setSolutionStatus] = useState<'idle' | 'generating' | 'ready' | 'error' | 'cancelled'>('idle');
   const [solutionError, setSolutionError] = useState<string | null>(null);
-  const [solutionFile, setSolutionFile] = useState<
-    { url: string; fileName: string; mimeType: string } | null
+  const [solutionFiles, setSolutionFiles] = useState<
+    | {
+        docx: { url: string; fileName: string; mimeType: string };
+        pdf: { url: string; fileName: string; mimeType: string };
+      }
+    | null
   >(null);
+  const [generationProgress, setGenerationProgress] = useState<
+    { label: string; value: number; total: number } | null
+  >(null);
+  const [generationMetadata, setGenerationMetadata] = useState<
+    | {
+        missingSources: boolean;
+        citationStyle: string;
+        upgradeRequired: boolean;
+        incompleteSections: string[];
+      }
+    | null
+  >(null);
+  const [generationParagraphs, setGenerationParagraphs] = useState<string[] | null>(null);
+  const [classificationStatus, setClassificationStatus] = useState<'idle' | 'checking' | 'error'>('idle');
+  const [classificationResult, setClassificationResult] = useState<AssignmentDetectionResult | null>(null);
   const [attachments, setAttachments] = useState<AttachmentLink[]>([]);
   const [canvasLink, setCanvasLink] = useState<string | null>(assignment?.html_url ?? null);
-  const guardEnabled = featureFlags.assignmentSolveGuard;
-  const [solveCheck, setSolveCheck] = useState<
-    { status: 'idle' | 'checking' | 'allowed' | 'blocked'; reason?: string; confidence?: number }
-  >({ status: guardEnabled ? 'checking' : 'allowed' });
 
   const dueText = useMemo(() => {
     if (!assignment?.due_at) {
@@ -225,15 +242,28 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     [instructorContexts, userContexts]
   );
   const hasGuideContext = combinedContexts.length > 0;
-  const guardChecking = guardEnabled && solveCheck.status === 'checking';
-  const solveGuardBlocked = guardEnabled && solveCheck.status === 'blocked';
-  const solveButtonDisabled = !hasGuideContext || guardChecking || solveGuardBlocked;
+  const instructionsOnly = classificationResult?.kind === 'instructions_only';
+  const submissionButtonDisabled =
+    solutionStatus === 'generating' || classificationStatus === 'checking' || instructionsOnly;
+  const submissionButtonTitle = instructionsOnly
+    ? 'Needs a solvable prompt.'
+    : classificationStatus === 'checking'
+      ? 'Checking assignment type…'
+      : undefined;
+  const guideButtonDisabled = !hasGuideContext || guideStatus === 'generating';
+  const guideButtonTitle = !hasGuideContext
+    ? 'Upload instructor files or notes to enable the guide.'
+    : undefined;
 
   useEffect(() => {
     return () => {
-      if (solutionUrlRef.current) {
-        URL.revokeObjectURL(solutionUrlRef.current);
-        solutionUrlRef.current = null;
+      if (solutionUrlsRef.current.docx) {
+        URL.revokeObjectURL(solutionUrlsRef.current.docx);
+        solutionUrlsRef.current.docx = null;
+      }
+      if (solutionUrlsRef.current.pdf) {
+        URL.revokeObjectURL(solutionUrlsRef.current.pdf);
+        solutionUrlsRef.current.pdf = null;
       }
     };
   }, []);
@@ -248,15 +278,25 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     activeGuideRunRef.current += 1;
     setSolutionStatus('idle');
     setSolutionError(null);
-    if (solutionUrlRef.current) {
-      URL.revokeObjectURL(solutionUrlRef.current);
-      solutionUrlRef.current = null;
+    generationCancelledRef.current = false;
+    activeGenerationRef.current = null;
+    if (solutionUrlsRef.current.docx) {
+      URL.revokeObjectURL(solutionUrlsRef.current.docx);
+      solutionUrlsRef.current.docx = null;
     }
-    setSolutionFile(null);
-    lastContextSignatureRef.current = null;
+    if (solutionUrlsRef.current.pdf) {
+      URL.revokeObjectURL(solutionUrlsRef.current.pdf);
+      solutionUrlsRef.current.pdf = null;
+    }
+    setSolutionFiles(null);
+    setGenerationProgress(null);
+    setGenerationMetadata(null);
+    setGenerationParagraphs(null);
+    setClassificationStatus('idle');
+    setClassificationResult(null);
+    classificationSignatureRef.current = null;
     setAttachments([]);
     setCanvasLink(assignment?.html_url ?? null);
-    setSolveCheck({ status: guardEnabled ? 'checking' : 'allowed' });
   }, [assignment?.id]);
 
   useEffect(() => {
@@ -315,62 +355,52 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   }, [assignment, hasInstructorContext, appendAssignmentContext]);
 
   useEffect(() => {
-    if (!guardEnabled) {
-      if (solveCheck.status !== 'allowed') {
-        setSolveCheck({ status: 'allowed' });
-      }
-      guardSignatureRef.current = null;
-      return;
-    }
     if (!assignment) {
-      setSolveCheck({ status: 'idle' });
-      guardSignatureRef.current = null;
+      setClassificationStatus('idle');
+      setClassificationResult(null);
+      classificationSignatureRef.current = null;
       return;
     }
 
-    const signature = combinedContexts
-      .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
-      .join('|');
-    const combinedText = combinedContexts.map((entry) => entry.content).join('\n\n');
+    const detectionSource = combinedContexts.length
+      ? combinedContexts.map((entry) => entry.content).join('\n\n')
+      : assignment.description ?? '';
 
-    if (!combinedText.trim().length) {
-      guardSignatureRef.current = signature.length ? signature : null;
-      setSolveCheck({ status: 'allowed', confidence: 0.5 });
+    const signature = `${assignment.id}::${combinedContexts.length}::${detectionSource.length}`;
+    if (classificationSignatureRef.current === signature) {
+      return;
+    }
+    classificationSignatureRef.current = signature;
+
+    if (!detectionSource.trim().length) {
+      setClassificationStatus('idle');
+      setClassificationResult(null);
       return;
     }
 
-    if (
-      guardSignatureRef.current === signature &&
-      (solveCheck.status === 'allowed' || solveCheck.status === 'blocked')
-    ) {
-      return;
-    }
-
-    guardSignatureRef.current = signature;
     let cancelled = false;
-    setSolveCheck({ status: 'checking' });
-
+    setClassificationStatus('checking');
     (async () => {
       try {
-        const result = await isActualAssignment(assignment, combinedText);
+        const response = await window.dued8.assignments.classify({
+          assignment: { name: assignment.name, description: assignment.description ?? null },
+          extractedText: detectionSource
+        });
         if (cancelled) {
           return;
         }
-        if (result.isAssignment) {
-          setSolveCheck({ status: 'allowed', confidence: result.confidence, reason: result.reason });
-        } else {
-          setSolveCheck({ status: 'blocked', confidence: result.confidence, reason: result.reason });
-          if (solutionUrlRef.current) {
-            URL.revokeObjectURL(solutionUrlRef.current);
-            solutionUrlRef.current = null;
-          }
-          setSolutionFile(null);
-          setSolutionStatus('idle');
+        if (!response.ok) {
+          setClassificationStatus('error');
+          setClassificationResult(null);
+          return;
         }
+        setClassificationResult(response.data);
+        setClassificationStatus('idle');
       } catch (err) {
-        console.error('Assignment guard check failed', err);
+        console.error('Assignment classification failed', err);
         if (!cancelled) {
-          setSolveCheck({ status: 'allowed' });
+          setClassificationStatus('error');
+          setClassificationResult(null);
         }
       }
     })();
@@ -378,164 +408,160 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     return () => {
       cancelled = true;
     };
-  }, [assignment, combinedContexts, guardEnabled, solveCheck.status]);
+  }, [assignment, combinedContexts]);
 
-  useEffect(() => {
-    if (!assignment || !hasGuideContext) {
-      if (solutionUrlRef.current) {
-        URL.revokeObjectURL(solutionUrlRef.current);
-        solutionUrlRef.current = null;
-      }
-      setSolutionStatus('idle');
-      setSolutionError(null);
-      setSolutionFile(null);
-      lastContextSignatureRef.current = null;
-      setGuidePlan(null);
-      setGuideProgress(null);
-      setGuideError(null);
-      setGuideStatus('idle');
-      activeGuideRunRef.current += 1;
-      return;
-    }
+  const determineDownloadBase = () => {
+    const baseName = safeDownloadName(assignment?.name ?? 'assignment');
+    return baseName.length ? baseName : 'assignment';
+  };
 
-    if (guardEnabled) {
-      if (solveCheck.status === 'checking') {
-        return;
-      }
-      if (solveCheck.status === 'blocked') {
-        return;
-      }
-    }
-
-    const signature = combinedContexts
-      .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
-      .join('|');
-
-    if (!signature.length) {
-      return;
-    }
-
-    if (lastContextSignatureRef.current === signature) {
-      if (
-        solutionStatus === 'ready' ||
-        solutionStatus === 'generating' ||
-        solutionStatus === 'error'
-      ) {
-        return;
-      }
-    }
-
-    let cancelled = false;
-    setSolutionStatus('generating');
-    setSolutionError(null);
-    if (lastContextSignatureRef.current !== signature) {
-      setGuidePlan(null);
-      setGuideProgress(null);
-      setGuideError(null);
-      setGuideStatus('idle');
-      activeGuideRunRef.current += 1;
-    }
-    lastContextSignatureRef.current = signature;
-
-    const determineExtension = () => {
-      const searchOrder = [userContexts, instructorContexts, combinedContexts];
-      for (const list of searchOrder) {
-        for (const entry of list) {
-          const ext = entry.fileName.split('.').pop()?.toLowerCase();
-          if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-            return { extension: ext as 'pdf' | 'docx', originalName: entry.fileName };
-          }
-        }
-      }
-      const fallbackName = `${assignment.name ?? 'assignment'}.docx`;
-      return { extension: 'docx' as const, originalName: fallbackName };
-    };
-
-    const { extension, originalName } = determineExtension();
-
-    const generate = async () => {
-      try {
-        const content = buildSolutionContent({
-          assignmentName: assignment.name,
-          courseName,
-          dueText,
-          contexts: combinedContexts.map((entry) => ({
-            fileName: entry.fileName,
-            content: entry.content
-          }))
-        });
-        const artifact = await createSolutionArtifact({ extension, content });
-        if (cancelled) {
-          return;
-        }
-        const sanitizedOriginal = safeDownloadName(
-          originalName || `${assignment.name ?? 'assignment'}.${extension}`
-        );
-        const ensuredBase = sanitizedOriginal.length ? sanitizedOriginal : `assignment.${extension}`;
-        const ensuredWithExt = ensuredBase.includes('.') ? ensuredBase : `${ensuredBase}.${extension}`;
-        const downloadName = ensuredWithExt.startsWith('Completed_')
-          ? ensuredWithExt
-          : `Completed_${ensuredWithExt}`;
-        const url = URL.createObjectURL(artifact.blob);
-        if (solutionUrlRef.current) {
-          URL.revokeObjectURL(solutionUrlRef.current);
-        }
-        solutionUrlRef.current = url;
-        setSolutionFile({ url, fileName: downloadName, mimeType: artifact.mimeType });
-        setSolutionStatus('ready');
-      } catch (err) {
-        if (!cancelled) {
-          if (solutionUrlRef.current) {
-            URL.revokeObjectURL(solutionUrlRef.current);
-            solutionUrlRef.current = null;
-          }
-          setSolutionFile(null);
-          setSolutionStatus('error');
-          setSolutionError((err as Error).message || 'Failed to generate the completed file.');
-        }
-      }
-    };
-
-    generate();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    assignment,
-    combinedContexts,
-    courseName,
-    dueText,
-    guardEnabled,
-    hasGuideContext,
-    instructorContexts,
-    solutionStatus,
-    solveCheck.status,
-    userContexts
-  ]);
-
-  const retrySolutionGeneration = () => {
+  const handleGenerateSubmission = async () => {
     if (!assignment) {
       return;
     }
-    if (solveGuardBlocked || guardChecking) {
+    if (solutionStatus === 'generating') {
       return;
     }
-    lastContextSignatureRef.current = null;
+    generationCancelledRef.current = false;
+    setSolutionStatus('generating');
+    setSolutionError(null);
+    if (solutionUrlsRef.current.docx) {
+      URL.revokeObjectURL(solutionUrlsRef.current.docx);
+      solutionUrlsRef.current.docx = null;
+    }
+    if (solutionUrlsRef.current.pdf) {
+      URL.revokeObjectURL(solutionUrlsRef.current.pdf);
+      solutionUrlsRef.current.pdf = null;
+    }
+    setSolutionFiles(null);
+    setGenerationProgress({ label: 'Analysing assignment format', value: 0, total: 3 });
+    setGenerationMetadata(null);
+    setGenerationParagraphs(null);
+    const runId = Date.now();
+    activeGenerationRef.current = runId;
+
+    const resolveContexts = () => {
+      if (combinedContexts.length) {
+        return combinedContexts.map((entry) => ({ fileName: entry.fileName, content: entry.content }));
+      }
+      const fallbackContent = assignment.description?.trim().length
+        ? assignment.description
+        : 'Assignment instructions were not provided, so the generator mirrored the syllabus guidelines.';
+      return [
+        {
+          fileName: assignment.name ?? 'assignment',
+          content: fallbackContent ?? ''
+        }
+      ];
+    };
+
+    const waitFor = (duration: number) =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(() => resolve(), duration);
+      });
+
+    try {
+      await waitFor(120);
+      if (generationCancelledRef.current || activeGenerationRef.current !== runId) {
+        throw new Error('cancelled');
+      }
+      setGenerationProgress({ label: 'Mapping prompt sections', value: 1, total: 3 });
+
+      const document = buildSubmissionDocument({
+        assignmentName: assignment.name,
+        courseName,
+        dueText,
+        contexts: resolveContexts(),
+        canvasLink,
+        attachments: attachments.map((attachment) => ({ name: attachment.name, url: attachment.url }))
+      });
+
+      if (generationCancelledRef.current || activeGenerationRef.current !== runId) {
+        throw new Error('cancelled');
+      }
+
+      setGenerationProgress({ label: 'Formatting exports', value: 2, total: 3 });
+
+      const artifacts = await createSubmissionArtifacts(document);
+
+      if (generationCancelledRef.current || activeGenerationRef.current !== runId) {
+        throw new Error('cancelled');
+      }
+
+      const base = determineDownloadBase();
+      const docxName = base.endsWith('.docx') ? base : `${base}.docx`;
+      const pdfName = base.endsWith('.pdf') ? base : `${base}.pdf`;
+      const docxDownload = docxName.startsWith('Completed_') ? docxName : `Completed_${docxName}`;
+      const pdfDownload = pdfName.startsWith('Completed_') ? pdfName : `Completed_${pdfName}`;
+
+      if (solutionUrlsRef.current.docx) {
+        URL.revokeObjectURL(solutionUrlsRef.current.docx);
+      }
+      if (solutionUrlsRef.current.pdf) {
+        URL.revokeObjectURL(solutionUrlsRef.current.pdf);
+      }
+
+      const docxUrl = URL.createObjectURL(artifacts.docx.blob);
+      const pdfUrl = URL.createObjectURL(artifacts.pdf.blob);
+      solutionUrlsRef.current.docx = docxUrl;
+      solutionUrlsRef.current.pdf = pdfUrl;
+
+      setSolutionFiles({
+        docx: { url: docxUrl, fileName: docxDownload, mimeType: artifacts.docx.mimeType },
+        pdf: { url: pdfUrl, fileName: pdfDownload, mimeType: artifacts.pdf.mimeType }
+      });
+
+      setGenerationMetadata({
+        missingSources: document.missingSources,
+        citationStyle: document.citationStyle,
+        upgradeRequired: document.upgradeRequired,
+        incompleteSections: document.incompleteSections
+      });
+      setGenerationParagraphs(artifacts.paragraphs);
+      setGenerationProgress(null);
+      setSolutionStatus('ready');
+      activeGenerationRef.current = null;
+    } catch (err) {
+      activeGenerationRef.current = null;
+      if ((err as Error).message === 'cancelled') {
+        setSolutionStatus('cancelled');
+        setGenerationProgress(null);
+        return;
+      }
+      console.error('Failed to generate submission', err);
+      setSolutionStatus('error');
+      setSolutionError((err as Error).message || 'Failed to generate the completed assignment.');
+      setGenerationProgress(null);
+    }
+  };
+
+  const cancelGeneration = () => {
+    if (solutionStatus !== 'generating') {
+      return;
+    }
+    generationCancelledRef.current = true;
+    setGenerationProgress(null);
+    setSolutionStatus('cancelled');
+  };
+
+  const resumeGeneration = () => {
+    if (!assignment) {
+      return;
+    }
+    generationCancelledRef.current = false;
     setSolutionStatus('idle');
     setSolutionError(null);
+    handleGenerateSubmission();
   };
 
   const generateGuide = async () => {
     if (!assignment || !hasGuideContext) {
       return;
     }
-    if (solutionStatus !== 'ready') {
-      return;
-    }
     if (guideStatus === 'generating') {
       return;
     }
+    setGuideExpanded(true);
     const previousPlan = guidePlan;
     try {
       setGuideStatus('generating');
@@ -717,22 +743,251 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         </div>
       </div>
 
-      {solveGuardBlocked ? (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 12
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleGenerateSubmission}
+          disabled={submissionButtonDisabled}
+          title={submissionButtonTitle}
+          style={{
+            borderRadius: 999,
+            padding: '10px 22px',
+            border: 'none',
+            background: submissionButtonDisabled ? 'rgba(148,163,184,0.25)' : 'var(--accent)',
+            color: submissionButtonDisabled ? 'var(--text-secondary)' : '#fff',
+            cursor: submissionButtonDisabled ? 'not-allowed' : 'pointer',
+            boxShadow: submissionButtonDisabled ? 'none' : '0 10px 20px rgba(10, 132, 255, 0.25)',
+            fontWeight: 600
+          }}
+        >
+          Generate completed assignment
+        </button>
+        <button
+          type="button"
+          onClick={generateGuide}
+          disabled={guideButtonDisabled}
+          title={guideButtonTitle}
+          style={{
+            borderRadius: 999,
+            padding: '10px 22px',
+            border: '1px solid var(--surface-border)',
+            background: guideButtonDisabled ? 'rgba(148,163,184,0.15)' : '#fff',
+            color: guideButtonDisabled ? 'var(--text-secondary)' : 'var(--accent)',
+            cursor: guideButtonDisabled ? 'not-allowed' : 'pointer',
+            fontWeight: 600
+          }}
+        >
+          Generate guide
+        </button>
+        {classificationStatus === 'checking' ? (
+          <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+            Checking assignment type…
+          </span>
+        ) : null}
+        {instructionsOnly ? (
+          <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+            This file contains instructions. You can generate a Study Guide.
+          </span>
+        ) : null}
+        {classificationStatus === 'error' ? (
+          <span style={{ color: '#b45309', fontSize: 13 }}>
+            We couldn’t verify the assignment type. Try again.
+          </span>
+        ) : null}
+      </div>
+
+      {solutionStatus === 'generating' && generationProgress ? (
+        <div
+          style={{
+            marginTop: -4,
+            border: '1px solid var(--surface-border)',
+            borderRadius: 14,
+            padding: '12px 16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 12,
+            background: 'rgba(10,132,255,0.08)'
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>{generationProgress.label}</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+            Step {generationProgress.value + 1} of {generationProgress.total}
+          </span>
+          <button
+            type="button"
+            onClick={cancelGeneration}
+            style={{
+              borderRadius: 999,
+              border: '1px solid var(--surface-border)',
+              background: '#fff',
+              padding: '6px 14px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {solutionStatus === 'cancelled' ? (
+        <div
+          style={{
+            border: '1px solid rgba(59,130,246,0.4)',
+            borderRadius: 14,
+            padding: '12px 16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 12,
+            background: 'rgba(191,219,254,0.4)'
+          }}
+        >
+          <span>Generation paused. Resume when you’re ready.</span>
+          <button
+            type="button"
+            onClick={resumeGeneration}
+            style={{
+              borderRadius: 999,
+              border: '1px solid var(--surface-border)',
+              background: '#fff',
+              padding: '6px 16px',
+              cursor: 'pointer'
+            }}
+          >
+            Resume
+          </button>
+        </div>
+      ) : null}
+
+      {solutionStatus === 'error' && solutionError ? (
         <div
           style={{
             borderRadius: 14,
-            border: '1px solid #fecaca',
-            background: '#fef2f2',
-            color: '#991b1b',
-            padding: '14px 16px',
+            border: '1px solid rgba(239,68,68,0.5)',
+            background: 'rgba(254,226,226,0.6)',
+            padding: '12px 16px',
             display: 'flex',
-            flexDirection: 'column',
-            gap: 6
+            flexWrap: 'wrap',
+            gap: 12,
+            alignItems: 'center'
           }}
         >
-          <strong>This looks like instructions, not a student deliverable. I will not auto-complete this.</strong>
-          {solveCheck.reason ? (
-            <span style={{ fontSize: 13 }}>{solveCheck.reason}</span>
+          <span style={{ color: '#991b1b' }}>{solutionError}</span>
+          <button
+            type="button"
+            onClick={handleGenerateSubmission}
+            style={{
+              borderRadius: 999,
+              border: '1px solid var(--surface-border)',
+              background: '#fff',
+              padding: '6px 14px',
+              cursor: 'pointer'
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
+
+      {solutionStatus === 'ready' && solutionFiles ? (
+        <div
+          style={{
+            border: '1px solid var(--surface-border)',
+            borderRadius: 16,
+            padding: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            background: 'rgba(255,255,255,0.88)'
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <a
+              href={solutionFiles.docx.url}
+              download={solutionFiles.docx.fileName}
+              style={{
+                background: 'var(--accent)',
+                color: '#fff',
+                borderRadius: 999,
+                padding: '10px 22px',
+                textDecoration: 'none',
+                boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+              }}
+            >
+              Download Google Doc (DOCX)
+            </a>
+            <a
+              href={solutionFiles.pdf.url}
+              download={solutionFiles.pdf.fileName}
+              style={{
+                borderRadius: 999,
+                padding: '10px 22px',
+                border: '1px solid var(--surface-border)',
+                textDecoration: 'none',
+                color: 'var(--accent)'
+              }}
+            >
+              Download PDF
+            </a>
+          </div>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+            Submission formatted in {generationMetadata?.citationStyle ?? 'APA 7'} with Times New Roman styling.
+          </span>
+          {generationMetadata?.missingSources ? (
+            <div
+              style={{
+                borderRadius: 12,
+                background: 'rgba(251,191,36,0.18)',
+                border: '1px solid rgba(217,119,6,0.4)',
+                padding: '10px 14px',
+                color: '#b45309'
+              }}
+            >
+              This submission still needs your sources before export. Replace the [SOURCE NEEDED] entries in the reference list.
+            </div>
+          ) : null}
+          {generationMetadata?.upgradeRequired ? (
+            <div
+              style={{
+                borderRadius: 12,
+                background: 'rgba(59,130,246,0.12)',
+                border: '1px solid rgba(37,99,235,0.3)',
+                padding: '10px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}
+            >
+              <strong>Upgrade to finish the remaining sections.</strong>
+              {(generationMetadata?.incompleteSections?.length ?? 0) ? (
+                <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: 13 }}>
+                  {generationMetadata?.incompleteSections?.slice(0, 3).map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                  {generationMetadata && generationMetadata.incompleteSections.length > 3 ? <li>…</li> : null}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+          {generationParagraphs ? (
+            <div style={{ borderTop: '1px solid var(--surface-border)', paddingTop: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Preview</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {generationParagraphs.slice(0, 3).map((paragraph, index) => (
+                  <p key={index} style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -882,98 +1137,14 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                 Generate a personalised walkthrough with our {STUDY_COACH_LABEL}. It uses instructor materials and your uploads
                 as context and only runs when requested. No model names are shown—just student-friendly guidance.
               </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-                  <strong>Completed assignment file</strong>
-                  <button
-                    type="button"
-                    onClick={retrySolutionGeneration}
-                    disabled={solveButtonDisabled}
-                    style={{
-                      border: '1px solid var(--surface-border)',
-                      borderRadius: 999,
-                      padding: '6px 18px',
-                      background: solveButtonDisabled ? 'rgba(148, 163, 184, 0.2)' : '#fff',
-                      color: solveButtonDisabled ? 'var(--text-secondary)' : 'var(--accent)',
-                      cursor: solveButtonDisabled ? 'not-allowed' : 'pointer',
-                      fontWeight: 600
-                    }}
-                  >
-                    Solve
-                  </button>
-                </div>
-                {guardChecking ? (
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    Checking if this is a student deliverable…
-                  </span>
-                ) : null}
-                {!guardChecking &&
-                !solveGuardBlocked &&
-                (solutionStatus === 'generating' || solutionStatus === 'idle') ? (
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    Preparing your completed assignment file…
-                  </span>
-                ) : null}
-                {solutionStatus === 'error' ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: 8,
-                      alignItems: 'center',
-                      color: '#b91c1c'
-                    }}
-                  >
-                    <span>We couldn’t finalise the completed file.</span>
-                    <button
-                      type="button"
-                      onClick={retrySolutionGeneration}
-                      disabled={solveGuardBlocked}
-                      style={{
-                        border: '1px solid var(--surface-border)',
-                        borderRadius: 999,
-                        padding: '6px 14px',
-                        background: solveGuardBlocked ? 'rgba(148, 163, 184, 0.2)' : '#fff',
-                        cursor: solveGuardBlocked ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : null}
-                {solutionStatus === 'ready' && solutionFile ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <a
-                      href={solutionFile.url}
-                      download={solutionFile.fileName}
-                      style={{
-                        alignSelf: 'flex-start',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        borderRadius: 999,
-                        padding: '10px 22px',
-                        textDecoration: 'none',
-                        boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
-                      }}
-                    >
-                      Download {solutionFile.fileName}
-                    </a>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                      Save the completed file before exploring the deeper guidance below.
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-              {solutionStatus === 'ready' ? (
-                <StudyGuidePanel
-                  plan={guidePlan}
-                  status={guideStatus}
-                  progress={guideProgress}
-                  onGenerate={generateGuide}
-                  canGenerate={solutionStatus === 'ready'}
-                  error={guideError}
-                />
-              ) : null}
+              <StudyGuidePanel
+                plan={guidePlan}
+                status={guideStatus}
+                progress={guideProgress}
+                onGenerate={generateGuide}
+                canGenerate={hasGuideContext}
+                error={guideError}
+              />
             </div>
           ) : null}
         </div>
