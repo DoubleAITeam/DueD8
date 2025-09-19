@@ -60,6 +60,13 @@ throwing across the bridge and to make error handling explicit in the renderer.
 Assignments are aggregated across all active courses and filtered to the next 14 days. Calendar events are requested once for the
 same 14 day window.
 
+## Assignment actions and generation behavior
+- The assignment detail view shows two primary actions: **Generate completed assignment** and **Generate guide**.
+- A backend-only classifier marks assignment context as `instructions_only` or `solvable_assignment`. When the former is detected the completed-assignment button is disabled with a tooltip and a neutral inline note encourages students to use the guide.
+- Completed assignment generation streams progress, allows cancel/resume, mirrors the original numbering, and defaults to Times New Roman 12pt double spacing when no styles are detected. A banner reminds students to add citations whenever sources are missing.
+- Each run produces a DOCX download (framed as a Google Doc export) and a PDF download with links back to the Canvas assignment and referenced attachments.
+- Study guides remain available independently of the completed document and reuse the Study Coach layout.
+
 ## Troubleshooting
 - **401 Unauthorized**: The token is expired or scoped incorrectly. Generate a fresh token and connect again. Saved invalid tokens
   are cleared automatically after a failed validation.

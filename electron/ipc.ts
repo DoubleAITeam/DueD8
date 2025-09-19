@@ -12,6 +12,7 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { isActualAssignment, type AssignmentClassification } from '../src/shared/assignments';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -103,6 +104,17 @@ const AssignmentInstructorContextRequest = z.object({
   courseId: z.number().int().positive()
 });
 
+const AssignmentClassificationRequest = z.object({
+  assignment: z
+    .object({
+      name: z.string().optional().nullable(),
+      description: z.string().optional().nullable()
+    })
+    .nullable()
+    .optional(),
+  extractedText: z.string().optional().default('')
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -114,6 +126,20 @@ ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResul
     return failure((error as Error).message || 'Failed to process uploads');
   }
 });
+
+ipcMain.handle(
+  'assignments:classify',
+  async (_event, payload): Promise<IpcResult<AssignmentClassification>> => {
+    try {
+      const { assignment, extractedText } = AssignmentClassificationRequest.parse(payload ?? {});
+      const result = await isActualAssignment(assignment ?? null, extractedText ?? '');
+      return success(result);
+    } catch (error) {
+      mainError('assignments:classify failed', (error as Error).message);
+      return failure('Assignment classification failed');
+    }
+  }
+);
 
 type CanvasAttachment = {
   id?: number;

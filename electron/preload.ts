@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('dued8', {
 
   assignments: {
     fetchInstructorContext: (payload: { assignmentId: number; courseId: number }) =>
-      ipcRenderer.invoke('assignments:fetchInstructorContext', payload)
+      ipcRenderer.invoke('assignments:fetchInstructorContext', payload),
+    classify: (payload: { assignment?: { name?: string | null; description?: string | null } | null; extractedText?: string }) =>
+      ipcRenderer.invoke('assignments:classify', payload)
   }
 });

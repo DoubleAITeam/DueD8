@@ -1,4 +1,5 @@
 import type { IpcResult } from '../shared/ipc';
+import type { AssignmentClassification } from '../shared/assignments';
 
 export {};
 
@@ -44,6 +45,10 @@ declare global {
             htmlUrl: string | null;
           }>
         >;
+        classify(payload: {
+          assignment?: { name?: string | null; description?: string | null } | null;
+          extractedText?: string;
+        }): Promise<IpcResult<AssignmentClassification>>;
       };
     };
   }

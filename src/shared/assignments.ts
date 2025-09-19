@@ -4,7 +4,7 @@ export type AssignmentLike = {
 };
 
 export type AssignmentClassification = {
-  isAssignment: boolean;
+  classification: 'instructions_only' | 'solvable_assignment';
   confidence: number;
   reason: string;
   signals: {
@@ -117,6 +117,9 @@ export async function isActualAssignment(
 
   const combinedConfidence = Math.min(1, Math.max(0, heuristicConfidence * 0.6 + llmScore * 0.4));
   const isAssignment = combinedConfidence >= 0.58;
+  const classification: AssignmentClassification['classification'] = isAssignment
+    ? 'solvable_assignment'
+    : 'instructions_only';
 
   let reason = '';
   if (!positiveHits.length && negativeHits.length) {
@@ -128,7 +131,7 @@ export async function isActualAssignment(
   }
 
   return {
-    isAssignment,
+    classification,
     confidence: combinedConfidence,
     reason,
     signals: {
