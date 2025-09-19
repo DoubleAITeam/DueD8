@@ -12,6 +12,10 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { sanitizeAssignment } from './ai/pipeline/sanitize';
+import { classify, type AssignmentType } from './ai/pipeline/classify';
+import { writeDeliverable, type Deliverable } from './ai/pipeline/writeDeliverable';
+import { renderDocxToTemp } from './render/docx/renderDocx';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -101,6 +105,12 @@ const FileDescriptorSchema = z.object({
 const AssignmentInstructorContextRequest = z.object({
   assignmentId: z.number().int().positive(),
   courseId: z.number().int().positive()
+});
+
+const DeliverableRequest = z.object({
+  raw: z.string(),
+  assignmentName: z.string().optional(),
+  course: z.string().optional()
 });
 
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
@@ -261,6 +271,70 @@ ipcMain.handle(
     } catch (error) {
       mainError('assignments:fetchInstructorContext failed', (error as Error).message);
       return failure((error as Error).message || 'Failed to load instructor context');
+    }
+  }
+);
+
+ipcMain.handle(
+  'assignments:classifySubmission',
+  async (
+    _event,
+    payload
+  ): Promise<IpcResult<{ type: AssignmentType; reason?: string }>> => {
+    try {
+      const { raw, assignmentName, course } = DeliverableRequest.parse(payload);
+      const clean = sanitizeAssignment(raw);
+      if (assignmentName) {
+        clean.title = assignmentName;
+      }
+      if (course) {
+        clean.course = course;
+      }
+      const type = await classify(clean);
+      const reason =
+        type === 'instructions'
+          ? 'This file is instructions. Generate a guide instead.'
+          : undefined;
+      return success({ type, reason });
+    } catch (error) {
+      mainError('assignments:classifySubmission failed', (error as Error).message);
+      return failure((error as Error).message || 'Classification failed');
+    }
+  }
+);
+
+ipcMain.handle(
+  'assignments:generateDeliverable',
+  async (
+    _event,
+    payload
+  ): Promise<
+    IpcResult<{
+      type: AssignmentType;
+      reason?: string;
+      deliverable?: Deliverable;
+      docx?: ArrayBuffer;
+    }>
+  > => {
+    try {
+      const { raw, assignmentName, course } = DeliverableRequest.parse(payload);
+      const clean = sanitizeAssignment(raw);
+      if (assignmentName) {
+        clean.title = assignmentName;
+      }
+      if (course) {
+        clean.course = course;
+      }
+      const type = await classify(clean);
+      if (type === 'instructions') {
+        return success({ type, reason: 'This file is instructions. Generate a guide instead.' });
+      }
+      const deliverable = await writeDeliverable(clean);
+      const docxBuffer = await renderDocxToTemp(deliverable);
+      return success({ type, deliverable, docx: docxBuffer });
+    } catch (error) {
+      mainError('assignments:generateDeliverable failed', (error as Error).message);
+      return failure((error as Error).message || 'Deliverable generation failed');
     }
   }
 );
