@@ -43,5 +43,25 @@ function migrate(db: Database.Database) {
       FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE CASCADE,
       FOREIGN KEY (event_id) REFERENCES event(id)   ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS assignment_record (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      canvas_id INTEGER NOT NULL UNIQUE,
+      course_id INTEGER NOT NULL,
+      slug TEXT NOT NULL,
+      google_doc_id TEXT,
+      google_doc_url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS token_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assignment_id INTEGER,
+      user_id TEXT NOT NULL,
+      tokens INTEGER NOT NULL,
+      used_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (assignment_id) REFERENCES assignment_record(id) ON DELETE SET NULL
+    );
   `);
 }

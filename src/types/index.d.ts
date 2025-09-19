@@ -45,6 +45,49 @@ declare global {
           }>
         >;
       };
+      google: {
+        isConnected(): Promise<IpcResult<{ connected: boolean }>>;
+        getAssignmentDoc(payload: { canvasId: number }): Promise<
+          IpcResult<{ documentId: string | null; documentUrl: string | null }>
+        >;
+        createDoc(payload: {
+          canvasId: number;
+          courseId: number;
+          slug: string;
+          title: string;
+          content: string;
+        }): Promise<IpcResult<{ documentId: string; documentUrl: string }>>;
+      };
+      tokens: {
+        getAllowance(payload: {
+          canvasId: number;
+          courseId: number;
+          slug: string;
+          userId: string;
+          requestedTokens: number;
+        }): Promise<
+          IpcResult<{
+            allowedTokens: number;
+            limitHit: boolean;
+            remainingAssignment: number;
+            remainingDaily: number;
+          }>
+        >;
+        recordUsage(payload: {
+          canvasId: number;
+          courseId: number;
+          slug: string;
+          userId: string;
+          tokens: number;
+        }): Promise<IpcResult<null>>;
+      };
+      solution: {
+        exportPdf(payload: {
+          html: string;
+          courseCode: string;
+          assignmentSlug: string;
+        }): Promise<IpcResult<{ filePath: string | null; cancelled?: boolean }>>;
+      };
     };
   }
 

@@ -1,6 +1,7 @@
 // src/main/ipc.ts
-import { ipcMain } from 'electron';
+import { app, dialog, ipcMain } from 'electron';
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { z } from 'zod';
 import { getDb } from './db';
 import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from './canvasService';
@@ -12,6 +13,13 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import {
+  createOrUpdateGoogleDoc,
+  getAssignmentGoogleDoc,
+  isGoogleConnected
+} from './googleService';
+import { renderHtmlToPdfBuffer } from './pdfService';
+import { getTokenAllowance, recordTokenUsage } from './tokenService';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -103,6 +111,40 @@ const AssignmentInstructorContextRequest = z.object({
   courseId: z.number().int().positive()
 });
 
+const TokenAllowanceRequest = z.object({
+  canvasId: z.number().int().positive(),
+  courseId: z.number().int().positive(),
+  slug: z.string().min(1),
+  userId: z.string().min(1),
+  requestedTokens: z.number().min(0)
+});
+
+const TokenUsageRecordRequest = z.object({
+  canvasId: z.number().int().positive(),
+  courseId: z.number().int().positive(),
+  slug: z.string().min(1),
+  userId: z.string().min(1),
+  tokens: z.number().min(0)
+});
+
+const GoogleDocRequest = z.object({
+  canvasId: z.number().int().positive(),
+  courseId: z.number().int().positive(),
+  slug: z.string().min(1),
+  title: z.string().min(1),
+  content: z.string().min(1)
+});
+
+const GoogleDocLookupRequest = z.object({
+  canvasId: z.number().int().positive()
+});
+
+const PdfExportRequest = z.object({
+  html: z.string().min(1),
+  courseCode: z.string().min(1),
+  assignmentSlug: z.string().min(1)
+});
+
 ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResult<ProcessedFile[]>> => {
   try {
     const files = z.array(FileDescriptorSchema).parse(payload);
@@ -156,6 +198,17 @@ function htmlToPlainText(html: string) {
     .map((line) => line.replace(/\s+/g, ' ').trim())
     .filter((line) => line.length)
     .join('\n');
+}
+
+function sanitizeForFileName(input: string) {
+  return input.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function formatDateStamp(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}${month}${day}`;
 }
 
 ipcMain.handle(
@@ -264,6 +317,122 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle('tokens:getAllowance', async (_event, payload): Promise<IpcResult<{
+  allowedTokens: number;
+  limitHit: boolean;
+  remainingAssignment: number;
+  remainingDaily: number;
+}>> => {
+  try {
+    const data = TokenAllowanceRequest.parse(payload);
+    const result = getTokenAllowance({
+      canvasId: data.canvasId,
+      courseId: data.courseId,
+      slug: data.slug,
+      userId: data.userId,
+      requestedTokens: data.requestedTokens
+    });
+    return success({
+      allowedTokens: result.allowedTokens,
+      limitHit: result.limitHit,
+      remainingAssignment: result.remainingAssignment,
+      remainingDaily: result.remainingDaily
+    });
+  } catch (error) {
+    mainError('tokens:getAllowance failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to calculate token allowance');
+  }
+});
+
+ipcMain.handle('tokens:recordUsage', async (_event, payload): Promise<IpcResult<null>> => {
+  try {
+    const data = TokenUsageRecordRequest.parse(payload);
+    const assignment = getTokenAllowance({
+      canvasId: data.canvasId,
+      courseId: data.courseId,
+      slug: data.slug,
+      userId: data.userId,
+      requestedTokens: 0
+    }).assignment;
+    recordTokenUsage(assignment.id, { userId: data.userId, tokens: data.tokens });
+    return success(null);
+  } catch (error) {
+    mainError('tokens:recordUsage failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to record token usage');
+  }
+});
+
+ipcMain.handle('google:isConnected', async (): Promise<IpcResult<{ connected: boolean }>> => {
+  try {
+    const connected = await isGoogleConnected();
+    return success({ connected });
+  } catch (error) {
+    mainError('google:isConnected failed', (error as Error).message);
+    return failure('Failed to determine Google connection');
+  }
+});
+
+ipcMain.handle('google:getAssignmentDoc', async (_event, payload): Promise<IpcResult<{
+  documentId: string | null;
+  documentUrl: string | null;
+}>> => {
+  try {
+    const data = GoogleDocLookupRequest.parse(payload);
+    const record = getAssignmentGoogleDoc(data.canvasId);
+    return success({
+      documentId: record?.google_doc_id ?? null,
+      documentUrl: record?.google_doc_url ?? null
+    });
+  } catch (error) {
+    mainError('google:getAssignmentDoc failed', (error as Error).message);
+    return failure('Failed to load Google Doc link');
+  }
+});
+
+ipcMain.handle('google:createDoc', async (_event, payload): Promise<IpcResult<{
+  documentId: string;
+  documentUrl: string;
+}>> => {
+  try {
+    const data = GoogleDocRequest.parse(payload);
+    const result = await createOrUpdateGoogleDoc({
+      canvasId: data.canvasId,
+      courseId: data.courseId,
+      slug: data.slug,
+      title: data.title,
+      content: data.content
+    });
+    return success(result);
+  } catch (error) {
+    mainError('google:createDoc failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create Google Doc');
+  }
+});
+
+ipcMain.handle('solution:exportPdf', async (_event, payload): Promise<IpcResult<{ filePath: string | null; cancelled?: boolean }>> => {
+  try {
+    const data = PdfExportRequest.parse(payload);
+    const safeCourse = sanitizeForFileName(data.courseCode) || 'Course';
+    const safeSlug = sanitizeForFileName(data.assignmentSlug) || 'assignment';
+    const stamp = formatDateStamp(new Date());
+    const defaultName = `${safeCourse}_${safeSlug}_${stamp}.pdf`;
+    const defaultDirectory = app.getPath('downloads');
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: path.join(defaultDirectory, defaultName),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (canceled || !filePath) {
+      return success({ filePath: null, cancelled: true });
+    }
+    const buffer = await renderHtmlToPdfBuffer(data.html);
+    await fs.writeFile(filePath, buffer);
+    return success({ filePath });
+  } catch (error) {
+    mainError('solution:exportPdf failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to export PDF');
+  }
+});
 
 ipcMain.handle('students.add', (_e, payload) => {
   const s = StudentSchema.parse(payload);

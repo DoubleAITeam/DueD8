@@ -499,6 +499,7 @@ export default function Dashboard() {
           <AssignmentDetail
             assignment={selectedAssignment}
             courseName={assignmentCourseName}
+            courseCode={selectedCourse?.course_code}
             onBack={handleBackFromAssignment}
             backLabel={assignmentBackLabel}
           />

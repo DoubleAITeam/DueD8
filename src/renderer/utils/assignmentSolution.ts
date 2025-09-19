@@ -6,10 +6,6 @@ type GeneratePdfOptions = {
   content: string;
 };
 
-type GenerateTxtOptions = {
-  content: string;
-};
-
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
@@ -326,24 +322,14 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
   };
 }
 
-function generateTxt({ content }: GenerateTxtOptions): ArtifactResult {
-  return {
-    blob: new Blob([content], { type: 'text/plain;charset=utf-8' }),
-    mimeType: 'text/plain'
-  };
-}
-
 export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx' | 'txt';
+  extension: 'pdf' | 'docx';
   content: string;
 }): Promise<ArtifactResult> {
   if (options.extension === 'pdf') {
     return generatePdf({ content: options.content });
   }
-  if (options.extension === 'docx') {
-    return generateDocx({ content: options.content });
-  }
-  return generateTxt({ content: options.content });
+  return generateDocx({ content: options.content });
 }
 
 export function buildSolutionContent(options: {
@@ -415,4 +401,72 @@ export function buildSolutionContent(options: {
   ].filter(Boolean);
 
   return segments.join('\n\n');
+}
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function splitIntoParagraphs(content: string) {
+  return content
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length);
+}
+
+export function buildSolutionHtml(options: { title: string; content: string }) {
+  const paragraphs = splitIntoParagraphs(options.content);
+  const body = paragraphs
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br/>')}</p>`)
+    .join('\n');
+  const heading = escapeHtml(options.title || 'Completed Assignment');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${heading}</title><style>body{font-family:"Inter","Segoe UI",sans-serif;color:#111827;padding:48px;line-height:1.6;}h1{font-size:28px;margin-bottom:16px;}p{margin:12px 0;}p:first-of-type{margin-top:0;}p:last-of-type{margin-bottom:0;}</style></head><body><h1>${heading}</h1>${body}</body></html>`;
+}
+
+export function estimateTokens(text: string) {
+  return text
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length).length;
+}
+
+export function truncateToTokenLimit(text: string, limit: number) {
+  const normalisedLimit = Math.max(0, Math.floor(limit));
+  if (normalisedLimit === 0) {
+    return { text: '', tokensUsed: 0, truncated: text.trim().length > 0 };
+  }
+  const segments = text
+    .split(/(?<=[.!?])\s+/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length);
+  const kept: string[] = [];
+  let tokensUsed = 0;
+  for (const segment of segments) {
+    const segmentTokens = estimateTokens(segment);
+    if (tokensUsed + segmentTokens > normalisedLimit) {
+      break;
+    }
+    kept.push(segment);
+    tokensUsed += segmentTokens;
+  }
+  const totalTokens = estimateTokens(text);
+  if (!kept.length) {
+    const words = text
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter((word) => word.length);
+    const limited = words.slice(0, normalisedLimit);
+    return {
+      text: limited.join(' '),
+      tokensUsed: limited.length,
+      truncated: limited.length < words.length
+    };
+  }
+  const truncated = tokensUsed < totalTokens;
+  return { text: kept.join(' '), tokensUsed, truncated };
 }
