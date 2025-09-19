@@ -1,9 +1,14 @@
+import type { SubmissionFormatting } from './submissionFormatter';
+import { DEFAULT_FORMATTING } from './submissionFormatter';
+
 type GenerateDocxOptions = {
   content: string;
+  formatting: SubmissionFormatting;
 };
 
 type GeneratePdfOptions = {
   content: string;
+  formatting: SubmissionFormatting;
 };
 
 type ArtifactResult = {
@@ -160,7 +165,11 @@ function escapeXml(input: string) {
     .replace(/'/g, '&apos;');
 }
 
-function createDocxParagraphs(content: string) {
+function escapeXmlAttribute(input: string) {
+  return escapeXml(input).replace(/"/g, '&quot;');
+}
+
+function createDocxParagraphs(content: string, formatting: SubmissionFormatting) {
   const paragraphs = content
     .split(/\n{2,}/)
     .map((section) => section.trim())
@@ -169,6 +178,10 @@ function createDocxParagraphs(content: string) {
   if (!paragraphs.length) {
     return '<w:p><w:r><w:t/></w:r></w:p>';
   }
+
+  const font = escapeXmlAttribute(formatting.fontFamily);
+  const fontSize = Math.max(16, Math.round(formatting.fontSize * 2));
+  const lineSpacing = Math.max(120, Math.round(formatting.lineSpacing * 240));
 
   return paragraphs
     .map((paragraph) => {
@@ -179,16 +192,16 @@ function createDocxParagraphs(content: string) {
       const runs = lines
         .map((line, index) =>
           index === 0
-            ? `<w:r><w:t>${line}</w:t></w:r>`
-            : `<w:r><w:br/><w:t>${line}</w:t></w:r>`
+            ? `<w:r><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:t>${line}</w:t></w:r>`
+            : `<w:r><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:br/><w:t>${line}</w:t></w:r>`
         )
         .join('');
-      return `<w:p>${runs}</w:p>`;
+      return `<w:p><w:pPr><w:spacing w:line="${lineSpacing}" w:lineRule="auto"/></w:pPr>${runs}</w:p>`;
     })
     .join('');
 }
 
-async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactResult> {
+async function generateDocx({ content, formatting }: GenerateDocxOptions): Promise<ArtifactResult> {
   const encoder = new TextEncoder();
 
   const relationships =
@@ -205,7 +218,8 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
     '</Types>';
 
-  const documentBody = createDocxParagraphs(content);
+  const documentBody = createDocxParagraphs(content, formatting);
+  const margin = Math.max(720, Math.round(formatting.marginInches * 1440));
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" ' +
@@ -227,7 +241,7 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
     documentBody +
     '<w:sectPr>' +
     '<w:pgSz w:w="12240" w:h="15840"/>' +
-    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>' +
+    `<w:pgMar w:top="${margin}" w:right="${margin}" w:bottom="${margin}" w:left="${margin}" w:header="720" w:footer="720" w:gutter="0"/>` +
     '</w:sectPr>' +
     '</w:body>' +
     '</w:document>';
@@ -250,24 +264,25 @@ function escapePdf(input: string) {
   return input.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
-function generatePdfStream(content: string) {
+function generatePdfStream(content: string, formatting: SubmissionFormatting) {
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const operations: string[] = [];
   operations.push('BT');
-  operations.push('/F1 12 Tf');
+  operations.push(`/F1 ${formatting.fontSize} Tf`);
   operations.push('72 720 Td');
   lines.forEach((line, index) => {
     const escaped = escapePdf(line.length ? line : ' ');
     operations.push(`(${escaped}) Tj`);
     if (index < lines.length - 1) {
-      operations.push('0 -16 Td');
+      const step = Math.max(14, Math.round(formatting.fontSize * 1.2 * formatting.lineSpacing));
+      operations.push(`0 -${step} Td`);
     }
   });
   operations.push('ET');
   return operations.join('\n');
 }
 
-function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
+function generatePdf({ content, formatting }: GeneratePdfOptions): ArtifactResult {
   const encoder = new TextEncoder();
   const parts: string[] = [];
   const offsets: number[] = [];
@@ -291,7 +306,7 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n'
   );
 
-  const streamContent = generatePdfStream(content);
+  const streamContent = generatePdfStream(content, formatting);
   const streamLength = encoder.encode(streamContent).length;
 
   offsets[4] = length;
@@ -325,65 +340,14 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
 export async function createSolutionArtifact(options: {
   extension: 'pdf' | 'docx';
   content: string;
+  formatting?: SubmissionFormatting;
 }): Promise<ArtifactResult> {
+  const formatting = options.formatting ?? DEFAULT_FORMATTING;
   if (options.extension === 'pdf') {
-    return generatePdf({ content: options.content });
+    return generatePdf({ content: options.content, formatting });
   }
   if (options.extension === 'docx') {
-    return generateDocx({ content: options.content });
+    return generateDocx({ content: options.content, formatting });
   }
   throw new Error(`Unsupported artifact extension: ${options.extension}`);
-}
-
-export function buildSolutionContent(options: {
-  assignmentName?: string | null;
-  courseName?: string;
-  dueText?: string;
-  contexts: Array<{ fileName: string; content: string }>;
-}): string {
-  const { assignmentName, courseName, dueText, contexts } = options;
-  const title = assignmentName?.trim().length ? assignmentName.trim() : 'Assignment Submission';
-  const headerLines: string[] = [title];
-  if (courseName?.trim().length) {
-    headerLines.push(`Course: ${courseName.trim()}`);
-  }
-  if (dueText?.trim().length) {
-    headerLines.push(`Due: ${dueText.trim()}`);
-  }
-
-  const anchorContext = contexts[0];
-  const anchorSnippet = anchorContext?.content.replace(/\s+/g, ' ').trim() ?? '';
-  const anchorPreview = anchorSnippet.length > 220 ? `${anchorSnippet.slice(0, 220)}…` : anchorSnippet;
-
-  const introductionParts: string[] = [];
-  if (anchorContext) {
-    introductionParts.push(`This submission fulfills the directives set out in “${anchorContext.fileName}.”`);
-    if (anchorPreview) {
-      introductionParts.push(anchorPreview);
-    }
-  } else {
-    introductionParts.push('This submission fulfills the assignment requirements by integrating the provided materials into a cohesive response.');
-  }
-  const introduction = introductionParts.join(' ');
-
-  const supportingParagraphs = contexts.slice(1, 4).map((entry) => {
-    const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 220 ? `${snippet.slice(0, 220)}…` : snippet;
-    if (preview.length) {
-      return `Details from “${entry.fileName}” are incorporated directly into the work: ${preview}`;
-    }
-    return `Details from “${entry.fileName}” are incorporated directly into the work.`;
-  });
-
-  const conclusion =
-    'All deliverables described in the assignment have been completed and the response is ready for submission.';
-
-  const segments = [
-    headerLines.join('\n'),
-    introduction,
-    ...supportingParagraphs,
-    conclusion
-  ].filter((segment) => segment && segment.trim().length);
-
-  return segments.join('\n\n');
 }
