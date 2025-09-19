@@ -1,6 +1,7 @@
 // src/main/ipc.ts
 import { ipcMain } from 'electron';
 import path from 'node:path';
+import fsPromises from 'node:fs/promises';
 import { z } from 'zod';
 import { getDb } from './db';
 import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from './canvasService';
@@ -10,20 +11,157 @@ import { mainError, mainLog } from './logger';
 import {
   processAssignmentUploads,
   processRemoteAttachments,
-  type ProcessedFile
+  type ProcessedFile,
+  type RemoteAttachmentDescriptor
 } from './fileProcessing';
+import { sanitizeAssignment } from './ai/pipeline/sanitize';
+import { classify, type AssignmentType } from './ai/pipeline/classify';
+import { writeDeliverable, type Deliverable } from './ai/pipeline/writeDeliverable';
+import { lintDeliverableText } from './ai/pipeline/lint';
+import { renderDocx } from './render/docx/renderDocx';
 
 ipcMain.handle('ping', () => 'pong');
+
+const ClassificationRequest = z.object({
+  text: z.string(),
+  title: z.string().optional(),
+  course: z.string().optional()
+});
+
+const DeliverableRequest = ClassificationRequest.extend({
+  extension: z.union([z.literal('pdf'), z.literal('docx')])
+});
+
+ipcMain.handle(
+  'ai:classifyAssignment',
+  async (_event, payload): Promise<IpcResult<{ type: AssignmentType }>> => {
+    try {
+      const input = ClassificationRequest.parse(payload);
+      const clean = buildCleanInput(input);
+      const type = await classify(clean);
+      return success({ type });
+    } catch (error) {
+      mainError('ai:classifyAssignment failed', (error as Error).message);
+      return failure((error as Error).message || 'Classification failed');
+    }
+  }
+);
+
+ipcMain.handle(
+  'ai:generateDeliverable',
+  async (
+    _event,
+    payload
+  ): Promise<
+    IpcResult<
+      | { type: AssignmentType; status: 'instructions'; reason: string }
+      | {
+          type: AssignmentType;
+          status: 'deliverable';
+          plainText: string;
+          docx: string;
+          mimeType: string;
+        }
+    >
+  > => {
+    try {
+      const input = DeliverableRequest.parse(payload);
+      const clean = buildCleanInput(input);
+      const type = await classify(clean);
+      if (type === 'instructions') {
+        return success({ type, status: 'instructions', reason: 'This file is instructions. Generate a guide instead.' });
+      }
+
+      const deliverable = await writeDeliverable(clean);
+      const sanitized: Deliverable = {
+        ...deliverable,
+        sections: deliverable.sections.map((section) => ({
+          heading: section.heading,
+          body: lintDeliverableText(section.body)
+        })),
+        references: deliverable.references?.map((ref) => lintDeliverableText(ref))
+      };
+      const plainText = deliverableToPlainText(sanitized);
+      const docxResult = await renderDocx(sanitized);
+      const docxBase64 = Buffer.from(docxResult.buffer).toString('base64');
+      await cleanupTempDocx(docxResult.path);
+      return success({
+        type,
+        status: 'deliverable',
+        plainText,
+        docx: docxBase64,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+    } catch (error) {
+      mainError('ai:generateDeliverable failed', (error as Error).message);
+      return failure((error as Error).message || 'Failed to generate deliverable');
+    }
+  }
+);
+
+type ClassificationPayload = { text: string; title?: string; course?: string };
+type DeliverablePayload = {
+  text: string;
+  title?: string;
+  course?: string;
+  extension: 'pdf' | 'docx';
+};
+
+function success<T>(data: T): IpcResult<T> {
+  return { ok: true, data };
+}
+
+function failure(error: string, status?: number): IpcResult<never> {
+  return status === undefined ? { ok: false, error } : { ok: false, error, status };
+}
+
+function joinContextsText(input: string) {
+  return typeof input === 'string' ? input : '';
+}
+
+function buildCleanInput(payload: ClassificationPayload) {
+  const clean = sanitizeAssignment(joinContextsText(payload.text));
+  if (payload.title) {
+    clean.title = payload.title;
+  }
+  if (payload.course) {
+    clean.course = payload.course;
+  }
+  return clean;
+}
+
+function deliverableToPlainText(deliverable: Deliverable) {
+  const lines: string[] = [];
+  if (deliverable.title) {
+    lines.push(deliverable.title);
+  }
+  for (const section of deliverable.sections) {
+    if (section.heading) {
+      lines.push(section.heading);
+    }
+    lines.push(section.body);
+  }
+  if (deliverable.references?.length) {
+    lines.push('References');
+    lines.push(...deliverable.references);
+  }
+  return lintDeliverableText(lines.join('\n\n'));
+}
+
+async function cleanupTempDocx(filePath: string) {
+  try {
+    const dir = path.dirname(filePath);
+    await fsPromises.rm(dir, { recursive: true, force: true });
+  } catch (error) {
+    mainError('cleanupTempDocx failed', (error as Error).message);
+  }
+}
 
 const StudentSchema = z.object({
   first_name: z.string().min(1),
   last_name: z.string().min(1),
   county: z.enum(['Fairfax', 'Sci-Tech'])
 });
-
-const success = <T>(data: T): IpcResult<T> => ({ ok: true, data });
-const failure = (error: string, status?: number): IpcResult<never> =>
-  status === undefined ? { ok: false, error } : { ok: false, error, status };
 
 ipcMain.handle('canvas:setToken', async (_event, token: string): Promise<IpcResult<null>> => {
   try {
@@ -186,29 +324,21 @@ ipcMain.handle(
       }
 
       const attachments = Array.isArray(assignment.attachments) ? assignment.attachments : [];
-      const eligibleAttachments = attachments
-        .map((attachment, index) => {
-          const name =
-            attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
-          const ext = name ? path.extname(name).toLowerCase() : '';
-          if (!name || !attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
-            return null;
-          }
-          return {
-            url: attachment.url,
-            name,
-            type: attachment.content_type,
-            createdAt: attachment.created_at,
-            updatedAt: attachment.updated_at
-          };
-        })
-        .filter((entry): entry is {
-          url: string;
-          name: string;
-          type?: string;
-          createdAt?: string | null;
-          updatedAt?: string | null;
-        } => Boolean(entry));
+      const eligibleAttachments: RemoteAttachmentDescriptor[] = [];
+      attachments.forEach((attachment, index) => {
+        const name = attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
+        const ext = name ? path.extname(name).toLowerCase() : '';
+        if (!name || !attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+          return;
+        }
+        eligibleAttachments.push({
+          url: attachment.url,
+          name,
+          type: attachment.content_type,
+          createdAt: attachment.created_at ?? null,
+          updatedAt: attachment.updated_at ?? null
+        });
+      });
 
       const processedAttachments = await processRemoteAttachments(eligibleAttachments);
       const attachmentEntries = processedAttachments.map((file, index) => {

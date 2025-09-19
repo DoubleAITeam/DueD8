@@ -335,55 +335,57 @@ export async function createSolutionArtifact(options: {
   throw new Error(`Unsupported artifact extension: ${options.extension}`);
 }
 
-export function buildSolutionContent(options: {
+type DeliverableArtifactOptions = {
   assignmentName?: string | null;
   courseName?: string;
-  dueText?: string;
   contexts: Array<{ fileName: string; content: string }>;
-}): string {
-  const { assignmentName, courseName, dueText, contexts } = options;
-  const title = assignmentName?.trim().length ? assignmentName.trim() : 'Assignment Submission';
-  const headerLines: string[] = [title];
-  if (courseName?.trim().length) {
-    headerLines.push(`Course: ${courseName.trim()}`);
+  extension: 'pdf' | 'docx';
+};
+
+type DeliverableArtifactResult =
+  | { status: 'instructions'; reason: string }
+  | ({ status: 'deliverable'; plainText: string } & ArtifactResult);
+
+function base64ToUint8Array(base64: string) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
   }
-  if (dueText?.trim().length) {
-    headerLines.push(`Due: ${dueText.trim()}`);
+  return bytes;
+}
+
+export async function generateDeliverableArtifact(
+  options: DeliverableArtifactOptions
+): Promise<DeliverableArtifactResult> {
+  const combinedText = options.contexts.map((entry) => entry.content).join('\n\n');
+  if (!combinedText.trim().length) {
+    return { status: 'instructions', reason: 'No assignment details provided.' };
   }
 
-  const anchorContext = contexts[0];
-  const anchorSnippet = anchorContext?.content.replace(/\s+/g, ' ').trim() ?? '';
-  const anchorPreview = anchorSnippet.length > 220 ? `${anchorSnippet.slice(0, 220)}…` : anchorSnippet;
-
-  const introductionParts: string[] = [];
-  if (anchorContext) {
-    introductionParts.push(`This submission fulfills the directives set out in “${anchorContext.fileName}.”`);
-    if (anchorPreview) {
-      introductionParts.push(anchorPreview);
-    }
-  } else {
-    introductionParts.push('This submission fulfills the assignment requirements by integrating the provided materials into a cohesive response.');
-  }
-  const introduction = introductionParts.join(' ');
-
-  const supportingParagraphs = contexts.slice(1, 4).map((entry) => {
-    const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 220 ? `${snippet.slice(0, 220)}…` : snippet;
-    if (preview.length) {
-      return `Details from “${entry.fileName}” are incorporated directly into the work: ${preview}`;
-    }
-    return `Details from “${entry.fileName}” are incorporated directly into the work.`;
+  const response = await window.dued8.ai.generateDeliverable({
+    text: combinedText,
+    title: options.assignmentName ?? undefined,
+    course: options.courseName ?? undefined,
+    extension: options.extension
   });
 
-  const conclusion =
-    'All deliverables described in the assignment have been completed and the response is ready for submission.';
+  if (!response.ok) {
+    throw new Error(response.error || 'Failed to generate deliverable');
+  }
 
-  const segments = [
-    headerLines.join('\n'),
-    introduction,
-    ...supportingParagraphs,
-    conclusion
-  ].filter((segment) => segment && segment.trim().length);
+  const payload = response.data;
+  if (payload.status === 'instructions') {
+    return { status: 'instructions', reason: payload.reason };
+  }
 
-  return segments.join('\n\n');
+  if (options.extension === 'docx') {
+    const bytes = base64ToUint8Array(payload.docx);
+    const blob = new Blob([bytes], { type: payload.mimeType });
+    return { status: 'deliverable', plainText: payload.plainText, blob, mimeType: payload.mimeType };
+  }
+
+  const artifact = generatePdf({ content: payload.plainText });
+  return { status: 'deliverable', plainText: payload.plainText, blob: artifact.blob, mimeType: artifact.mimeType };
 }

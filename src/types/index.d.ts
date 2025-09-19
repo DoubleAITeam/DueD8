@@ -45,6 +45,30 @@ declare global {
           }>
         >;
       };
+      ai: {
+        classifyAssignment(payload: {
+          text: string;
+          title?: string;
+          course?: string;
+        }): Promise<IpcResult<{ type: 'instructions' | 'deliverable_needed' }>>;
+        generateDeliverable(payload: {
+          text: string;
+          title?: string;
+          course?: string;
+          extension: 'pdf' | 'docx';
+        }): Promise<
+          IpcResult<
+            | { type: 'instructions'; status: 'instructions'; reason: string }
+            | {
+                type: 'deliverable_needed';
+                status: 'deliverable';
+                plainText: string;
+                docx: string;
+                mimeType: string;
+              }
+          >
+        >;
+      };
     };
   }
 

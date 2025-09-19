@@ -40,5 +40,13 @@ contextBridge.exposeInMainWorld('dued8', {
   assignments: {
     fetchInstructorContext: (payload: { assignmentId: number; courseId: number }) =>
       ipcRenderer.invoke('assignments:fetchInstructorContext', payload)
+  },
+
+  ai: {
+    classifyAssignment: (payload: { text: string; title?: string; course?: string }) =>
+      ipcRenderer.invoke('ai:classifyAssignment', payload),
+    generateDeliverable: (
+      payload: { text: string; title?: string; course?: string; extension: 'pdf' | 'docx' }
+    ) => ipcRenderer.invoke('ai:generateDeliverable', payload)
   }
 });
