@@ -12,6 +12,10 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { requestTokenBudget, logTokenUsage } from './tokenUsage';
+import { exportPdf } from './pdfGenerator';
+import { createGoogleDocument, getExistingDocument } from './googleDocs';
+import type { TokenBudgetResponse } from '../src/config/tokens';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -98,6 +102,35 @@ const FileDescriptorSchema = z.object({
   type: z.string().optional()
 });
 
+const TokenBudgetRequestSchema = z.object({
+  userId: z.string().min(1),
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive().optional(),
+  requestedTokens: z.number().int().min(0)
+});
+
+const TokenLogRequestSchema = z.object({
+  userId: z.string().min(1),
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive().optional(),
+  tokensUsed: z.number().int().min(0)
+});
+
+const GoogleDocCreateSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  courseId: z.number().int().positive().optional(),
+  account: z.string().min(1),
+  title: z.string().min(1),
+  content: z.string().min(1)
+});
+
+const PdfRequestSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  courseCode: z.string().min(1),
+  assignmentSlug: z.string().min(1),
+  htmlBody: z.string().min(1)
+});
+
 const AssignmentInstructorContextRequest = z.object({
   assignmentId: z.number().int().positive(),
   courseId: z.number().int().positive()
@@ -112,6 +145,68 @@ ipcMain.handle('files:processUploads', async (_event, payload): Promise<IpcResul
   } catch (error) {
     mainError('files:processUploads failed', (error as Error).message);
     return failure((error as Error).message || 'Failed to process uploads');
+  }
+});
+
+ipcMain.handle('tokens:requestBudget', async (_event, payload): Promise<IpcResult<TokenBudgetResponse>> => {
+  try {
+    const request = TokenBudgetRequestSchema.parse(payload);
+    const budget = requestTokenBudget(request);
+    return success(budget);
+  } catch (error) {
+    mainError('tokens:requestBudget failed', (error as Error).message);
+    return failure('Unable to evaluate token budget');
+  }
+});
+
+ipcMain.handle('tokens:logUsage', async (_event, payload): Promise<IpcResult<null>> => {
+  try {
+    const request = TokenLogRequestSchema.parse(payload);
+    logTokenUsage(request);
+    return success(null);
+  } catch (error) {
+    mainError('tokens:logUsage failed', (error as Error).message);
+    return failure('Failed to record token usage');
+  }
+});
+
+ipcMain.handle('google:getDocument', async (_event, payload): Promise<IpcResult<{ documentId: string; documentUrl: string } | null>> => {
+  try {
+    const assignmentId = z.number().int().positive().parse(payload);
+    const record = await getExistingDocument(assignmentId);
+    return success(record ? { documentId: record.documentId, documentUrl: record.documentUrl } : null);
+  } catch (error) {
+    mainError('google:getDocument failed', (error as Error).message);
+    return failure('Failed to load Google document');
+  }
+});
+
+ipcMain.handle('google:createDocument', async (_event, payload): Promise<IpcResult<{ documentId: string; documentUrl: string }>> => {
+  try {
+    const request = GoogleDocCreateSchema.parse(payload);
+    const created = await createGoogleDocument(request);
+    return success(created);
+  } catch (error) {
+    mainError('google:createDocument failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create Google document');
+  }
+});
+
+ipcMain.handle('exports:generatePdf', async (_event, payload): Promise<IpcResult<{ filePath: string }>> => {
+  try {
+    const request = PdfRequestSchema.parse(payload);
+    const result = await exportPdf({
+      courseCode: request.courseCode,
+      assignmentSlug: request.assignmentSlug,
+      htmlBody: request.htmlBody
+    });
+    return success(result);
+  } catch (error) {
+    if ((error as Error).message === 'cancelled') {
+      return failure('cancelled', 499);
+    }
+    mainError('exports:generatePdf failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create PDF');
   }
 });
 
@@ -191,7 +286,7 @@ ipcMain.handle(
           const name =
             attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
           const ext = name ? path.extname(name).toLowerCase() : '';
-          if (!name || !attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+          if (!name || !attachment.url || !['.pdf', '.docx'].includes(ext)) {
             return null;
           }
           return {

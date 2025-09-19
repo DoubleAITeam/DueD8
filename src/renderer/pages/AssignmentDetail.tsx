@@ -1,14 +1,74 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
-import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
+import { buildSolutionContent, solutionTextToHtml } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
 import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
 import { featureFlags } from '../../shared/featureFlags';
 import { isActualAssignment } from '../../shared/assignments';
+import { getPlatformBridge } from '../../lib/platformBridge';
+import type { TokenBudgetResponse } from '../../config/tokens';
 
-const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
 const STUDY_COACH_LABEL = 'Study Coach';
+const SUPPORTED_UPLOAD_EXTENSIONS = ['pdf', 'docx'] as const;
+type SupportedUploadExtension = (typeof SUPPORTED_UPLOAD_EXTENSIONS)[number];
+
+const platformBridge = getPlatformBridge();
+
+function tokenise(text: string) {
+  return text
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function countTokens(text: string) {
+  return tokenise(text).length;
+}
+
+function trimToTokenBudget(content: string, allowedTokens: number) {
+  const sentences = content
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  let usedTokens = 0;
+  const collected: string[] = [];
+  for (const sentence of sentences) {
+    const sentenceTokens = countTokens(sentence);
+    if (!sentenceTokens) {
+      continue;
+    }
+    if (usedTokens + sentenceTokens > allowedTokens) {
+      break;
+    }
+    collected.push(sentence);
+    usedTokens += sentenceTokens;
+  }
+
+  if (collected.length) {
+    return { text: collected.join(' '), tokensUsed: usedTokens };
+  }
+
+  const tokens = tokenise(content);
+  const sliced = tokens.slice(0, Math.max(0, allowedTokens));
+  const text = sliced.join(' ').trim();
+  return { text: text.length ? `${text}…` : text, tokensUsed: sliced.length };
+}
+
+function slugify(input: string) {
+  const base = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base.length ? base : 'assignment';
+}
+
+function sanitizeCourseCode(input?: string) {
+  if (!input) return 'COURSE';
+  const compact = input.replace(/[^a-zA-Z0-9]+/g, '').toUpperCase();
+  return compact.length ? compact : 'COURSE';
+}
 
 type AttachmentLink = { id: string; name: string; url: string; contentType: string | null };
 
@@ -159,10 +219,6 @@ function AttachmentsCard({
   );
 }
 
-function safeDownloadName(input: string) {
-  return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
-}
-
 type Props = {
   assignment: Assignment | null;
   courseName?: string;
@@ -175,9 +231,9 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const assignmentContexts = useStore((s) =>
     assignment ? s.assignmentContexts[assignment.id] ?? [] : []
   );
+  const profile = useStore((s) => s.profile);
   const setToast = useStore((s) => s.setToast);
   const inputRef = useRef<HTMLInputElement>(null);
-  const solutionUrlRef = useRef<string | null>(null);
   const lastContextSignatureRef = useRef<string | null>(null);
   const guardSignatureRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -194,9 +250,20 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const activeGuideRunRef = useRef<number>(0);
   const [solutionStatus, setSolutionStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle');
   const [solutionError, setSolutionError] = useState<string | null>(null);
-  const [solutionFile, setSolutionFile] = useState<
-    { url: string; fileName: string; mimeType: string } | null
+  const [solutionContent, setSolutionContent] = useState<string | null>(null);
+  const [solutionHtml, setSolutionHtml] = useState<string | null>(null);
+  const [tokenBudgetInfo, setTokenBudgetInfo] = useState<
+    { limitType: TokenBudgetResponse['limitType']; estimatedRemainingTokens: number } | null
   >(null);
+  const [googleDocStatus, setGoogleDocStatus] = useState<'idle' | 'creating' | 'ready' | 'error'>(
+    'idle'
+  );
+  const [googleDocLink, setGoogleDocLink] = useState<string | null>(null);
+  const [googleDocError, setGoogleDocError] = useState<string | null>(null);
+  const [pdfStatus, setPdfStatus] = useState<'idle' | 'generating' | 'success' | 'error'>(
+    'idle'
+  );
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<AttachmentLink[]>([]);
   const [canvasLink, setCanvasLink] = useState<string | null>(assignment?.html_url ?? null);
   const guardEnabled = featureFlags.assignmentSolveGuard;
@@ -230,15 +297,6 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const solveButtonDisabled = !hasGuideContext || guardChecking || solveGuardBlocked;
 
   useEffect(() => {
-    return () => {
-      if (solutionUrlRef.current) {
-        URL.revokeObjectURL(solutionUrlRef.current);
-        solutionUrlRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     setInstructorError(null);
     setInstructorLoading(false);
     setGuideStatus('idle');
@@ -248,11 +306,14 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     activeGuideRunRef.current += 1;
     setSolutionStatus('idle');
     setSolutionError(null);
-    if (solutionUrlRef.current) {
-      URL.revokeObjectURL(solutionUrlRef.current);
-      solutionUrlRef.current = null;
-    }
-    setSolutionFile(null);
+    setSolutionContent(null);
+    setSolutionHtml(null);
+    setTokenBudgetInfo(null);
+    setGoogleDocStatus('idle');
+    setGoogleDocError(null);
+    setGoogleDocLink(null);
+    setPdfStatus('idle');
+    setPdfError(null);
     lastContextSignatureRef.current = null;
     setAttachments([]);
     setCanvasLink(assignment?.html_url ?? null);
@@ -260,10 +321,65 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   }, [assignment?.id]);
 
   useEffect(() => {
+    if (!featureFlags.solveExports) {
+      setGoogleDocLink(null);
+      setGoogleDocStatus('idle');
+      setGoogleDocError(null);
+      return;
+    }
+
+    if (!assignment) {
+      setGoogleDocLink(null);
+      setGoogleDocStatus('idle');
+      setGoogleDocError(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const existing = await platformBridge.exports.getGoogleDocument(assignment.id);
+        if (cancelled) {
+          return;
+        }
+        if (existing.ok) {
+          if (existing.data) {
+            setGoogleDocLink(existing.data.documentUrl);
+            setGoogleDocStatus('ready');
+          } else {
+            setGoogleDocLink(null);
+            setGoogleDocStatus('idle');
+          }
+          setGoogleDocError(null);
+        } else {
+          setGoogleDocLink(null);
+          setGoogleDocStatus('idle');
+          setGoogleDocError(existing.error);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGoogleDocStatus('error');
+          setGoogleDocError((error as Error).message);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assignment?.id]);
+
+  useEffect(() => {
     if (!hasGuideContext) {
       setGuideExpanded(false);
     }
   }, [hasGuideContext]);
+
+  useEffect(() => {
+    if (solutionStatus === 'ready') {
+      setGuideExpanded(true);
+    }
+  }, [solutionStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,12 +476,9 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           setSolveCheck({ status: 'allowed', confidence: result.confidence, reason: result.reason });
         } else {
           setSolveCheck({ status: 'blocked', confidence: result.confidence, reason: result.reason });
-          if (solutionUrlRef.current) {
-            URL.revokeObjectURL(solutionUrlRef.current);
-            solutionUrlRef.current = null;
-          }
-          setSolutionFile(null);
           setSolutionStatus('idle');
+          setSolutionContent(null);
+          setSolutionHtml(null);
         }
       } catch (err) {
         console.error('Assignment guard check failed', err);
@@ -382,13 +495,10 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
 
   useEffect(() => {
     if (!assignment || !hasGuideContext) {
-      if (solutionUrlRef.current) {
-        URL.revokeObjectURL(solutionUrlRef.current);
-        solutionUrlRef.current = null;
-      }
       setSolutionStatus('idle');
       setSolutionError(null);
-      setSolutionFile(null);
+      setSolutionContent(null);
+      setSolutionHtml(null);
       lastContextSignatureRef.current = null;
       setGuidePlan(null);
       setGuideProgress(null);
@@ -437,22 +547,6 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     }
     lastContextSignatureRef.current = signature;
 
-    const determineExtension = () => {
-      const searchOrder = [userContexts, instructorContexts, combinedContexts];
-      for (const list of searchOrder) {
-        for (const entry of list) {
-          const ext = entry.fileName.split('.').pop()?.toLowerCase();
-          if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-            return { extension: ext as 'pdf' | 'docx' | 'txt', originalName: entry.fileName };
-          }
-        }
-      }
-      const fallbackName = `${assignment.name ?? 'assignment'}.txt`;
-      return { extension: 'txt' as const, originalName: fallbackName };
-    };
-
-    const { extension, originalName } = determineExtension();
-
     const generate = async () => {
       try {
         const content = buildSolutionContent({
@@ -464,34 +558,68 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
             content: entry.content
           }))
         });
-        const artifact = await createSolutionArtifact({ extension, content });
+        if (!content.trim().length) {
+          throw new Error('Generated solution was empty.');
+        }
+
+        let finalContent = content;
+        let tokensUsed = countTokens(content);
+
+        if (featureFlags.tokenGating && tokensUsed > 0) {
+          const userId =
+            profile?.primary_email?.trim().length
+              ? profile.primary_email.trim()
+              : profile?.name?.trim().length
+                ? profile.name.trim()
+                : 'anonymous-user';
+          const budgetResult = await platformBridge.tokens.requestBudget({
+            userId,
+            assignmentId: assignment.id,
+            courseId: assignment.course_id,
+            requestedTokens: tokensUsed
+          });
+          if (!budgetResult.ok) {
+            throw new Error(budgetResult.error || 'Unable to evaluate token budget.');
+          }
+          const budget = budgetResult.data;
+          if (budget.allowedTokens < tokensUsed) {
+            const trimmed = trimToTokenBudget(content, budget.allowedTokens);
+            finalContent = trimmed.text;
+            tokensUsed = trimmed.tokensUsed;
+            setTokenBudgetInfo({
+              limitType: budget.limitType,
+              estimatedRemainingTokens: budget.estimatedRemainingTokens
+            });
+          } else {
+            setTokenBudgetInfo(null);
+          }
+          const logResult = await platformBridge.tokens.logUsage({
+            userId,
+            assignmentId: assignment.id,
+            courseId: assignment.course_id,
+            tokensUsed
+          });
+          if (!logResult.ok) {
+            throw new Error(logResult.error || 'Failed to record token usage.');
+          }
+        } else {
+          setTokenBudgetInfo(null);
+        }
+
         if (cancelled) {
           return;
         }
-        const sanitizedOriginal = safeDownloadName(
-          originalName || `${assignment.name ?? 'assignment'}.${extension}`
-        );
-        const ensuredBase = sanitizedOriginal.length ? sanitizedOriginal : `assignment.${extension}`;
-        const ensuredWithExt = ensuredBase.includes('.') ? ensuredBase : `${ensuredBase}.${extension}`;
-        const downloadName = ensuredWithExt.startsWith('Completed_')
-          ? ensuredWithExt
-          : `Completed_${ensuredWithExt}`;
-        const url = URL.createObjectURL(artifact.blob);
-        if (solutionUrlRef.current) {
-          URL.revokeObjectURL(solutionUrlRef.current);
-        }
-        solutionUrlRef.current = url;
-        setSolutionFile({ url, fileName: downloadName, mimeType: artifact.mimeType });
+
+        setSolutionContent(finalContent);
+        setSolutionHtml(solutionTextToHtml(finalContent));
         setSolutionStatus('ready');
       } catch (err) {
         if (!cancelled) {
-          if (solutionUrlRef.current) {
-            URL.revokeObjectURL(solutionUrlRef.current);
-            solutionUrlRef.current = null;
-          }
-          setSolutionFile(null);
+          setSolutionContent(null);
+          setSolutionHtml(null);
           setSolutionStatus('error');
           setSolutionError((err as Error).message || 'Failed to generate the completed file.');
+          setTokenBudgetInfo(null);
         }
       }
     };
@@ -524,6 +652,14 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     lastContextSignatureRef.current = null;
     setSolutionStatus('idle');
     setSolutionError(null);
+    setSolutionContent(null);
+    setSolutionHtml(null);
+    setTokenBudgetInfo(null);
+    setGoogleDocStatus('idle');
+    setGoogleDocLink(null);
+    setGoogleDocError(null);
+    setPdfStatus('idle');
+    setPdfError(null);
   };
 
   const generateGuide = async () => {
@@ -583,6 +719,75 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     }
   };
 
+  const handleCreateGoogleDoc = async () => {
+    if (!assignment || !solutionContent || !featureFlags.solveExports) {
+      return;
+    }
+    const account =
+      profile?.primary_email?.trim().length
+        ? profile.primary_email.trim()
+        : profile?.name?.trim().length
+          ? profile.name.trim()
+          : 'anonymous-user';
+    setGoogleDocStatus('creating');
+    setGoogleDocError(null);
+    try {
+      const response = await platformBridge.exports.createGoogleDocument({
+        assignmentId: assignment.id,
+        courseId: assignment.course_id,
+        account,
+        title: assignment.name ?? 'Assignment',
+        content: solutionContent
+      });
+      if (!response.ok) {
+        throw new Error(response.error || 'Failed to create Google Doc');
+      }
+      setGoogleDocLink(response.data.documentUrl);
+      setGoogleDocStatus('ready');
+      setGoogleDocError(null);
+    } catch (error) {
+      setGoogleDocStatus('error');
+      setGoogleDocLink(null);
+      setGoogleDocError((error as Error).message || 'Unable to create Google Doc.');
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!assignment || !solutionHtml || !featureFlags.solveExports) {
+      return;
+    }
+    setPdfStatus('generating');
+    setPdfError(null);
+    try {
+      const result = await platformBridge.exports.generatePdf({
+        assignmentId: assignment.id,
+        courseCode: sanitizeCourseCode(courseName),
+        assignmentSlug: slugify(assignment.name ?? 'assignment'),
+        htmlBody: solutionHtml
+      });
+      if (!result.ok) {
+        if (result.status === 499) {
+          setPdfStatus('idle');
+          return;
+        }
+        throw new Error(result.error || 'Failed to export PDF');
+      }
+      setPdfStatus('success');
+      setToast(`PDF saved to ${result.data.filePath}`);
+    } catch (error) {
+      if ((error as Error).message === 'cancelled') {
+        setPdfStatus('idle');
+        return;
+      }
+      setPdfStatus('error');
+      setPdfError((error as Error).message || 'Unable to export PDF.');
+    }
+  };
+
+  const handlePremiumUpsell = () => {
+    setToast('Premium solves unlock the remaining tokens. Contact support to upgrade.');
+  };
+
   if (!assignment) {
     return (
       <section
@@ -620,11 +825,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
 
     const supported = files.filter((file) => {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      return Boolean(ext && SUPPORTED_EXTENSIONS.includes(ext));
+      return Boolean(ext && SUPPORTED_UPLOAD_EXTENSIONS.includes(ext as SupportedUploadExtension));
     });
 
     if (!supported.length) {
-      setError('Only PDF, DOCX, or TXT files are supported.');
+      setError('Only PDF or DOCX files are supported.');
       setStatus('error');
       return;
     }
@@ -634,20 +839,10 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     setError(null);
 
     try {
-      const directResults: Array<{ fileName: string; content: string }> = [];
       const descriptors: Array<{ path: string; name: string; type?: string }> = [];
 
       for (const file of supported) {
         const withPath = file as File & { path?: string };
-        const ext = file.name.split('.').pop()?.toLowerCase();
-        if (ext === 'txt' && !withPath.path) {
-          // PHASE 2: Fall back to renderer parsing when Electron omits the filesystem path.
-          const text = (await file.text()).trim();
-          if (text.length) {
-            directResults.push({ fileName: file.name, content: text });
-          }
-          continue;
-        }
         if (!withPath.path) {
           throw new Error(`Cannot process ${file.name} because no secure path was provided.`);
         }
@@ -663,7 +858,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         processed = response.data;
       }
 
-      const combined = [...directResults, ...processed].filter((entry) => entry.content.length);
+      const combined = processed.filter((entry) => entry.content.length);
       if (!combined.length) {
         throw new Error('We could not extract readable text from those files.');
       }
@@ -772,7 +967,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           transition: 'background 0.2s ease, border 0.2s ease'
         }}
       >
-        <p style={{ margin: 0, fontWeight: 600 }}>Drag & drop PDF, DOCX, or TXT files</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>Drag & drop PDF or DOCX files</p>
         <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
           {/* PHASE 2: Reinforce the drop target with an alternate upload path. */}
           or
@@ -796,7 +991,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.txt"
+          accept=".pdf,.docx"
           style={{ display: 'none' }}
           onChange={(event) => {
             handleFiles(event.target.files ?? []);
@@ -951,26 +1146,118 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                     </button>
                   </div>
                 ) : null}
-                {solutionStatus === 'ready' && solutionFile ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <a
-                      href={solutionFile.url}
-                      download={solutionFile.fileName}
+                {solutionStatus === 'ready' && solutionContent ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div
                       style={{
-                        alignSelf: 'flex-start',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        borderRadius: 999,
-                        padding: '10px 22px',
-                        textDecoration: 'none',
-                        boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+                        border: '1px solid var(--surface-border)',
+                        borderRadius: 16,
+                        padding: 20,
+                        background: '#fff',
+                        maxHeight: 360,
+                        overflowY: 'auto'
                       }}
-                    >
-                      Download {solutionFile.fileName}
-                    </a>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                      Save the completed file before exploring the deeper guidance below.
-                    </span>
+                      dangerouslySetInnerHTML={{ __html: solutionHtml ?? '' }}
+                    />
+                    {tokenBudgetInfo ? (
+                      <div
+                        style={{
+                          border: '1px solid rgba(249, 115, 22, 0.4)',
+                          background: 'rgba(249, 115, 22, 0.08)',
+                          color: '#9a3412',
+                          borderRadius: 14,
+                          padding: '14px 18px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6
+                        }}
+                      >
+                        <strong>Premium needed to finish the draft</strong>
+                        <span>
+                          We paused at the {tokenBudgetInfo.limitType === 'assignment' ? 'assignment' : 'daily'} token cap. Estimated tokens remaining:{' '}
+                          {Math.max(0, Math.round(tokenBudgetInfo.estimatedRemainingTokens))}.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handlePremiumUpsell}
+                          style={{
+                            alignSelf: 'flex-start',
+                            borderRadius: 999,
+                            padding: '6px 16px',
+                            border: 'none',
+                            background: '#f97316',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          Explore Premium options
+                        </button>
+                      </div>
+                    ) : null}
+                    {featureFlags.solveExports ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                        {googleDocLink ? (
+                          <a
+                            href={googleDocLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              background: 'var(--accent)',
+                              color: '#fff',
+                              borderRadius: 999,
+                              padding: '10px 22px',
+                              textDecoration: 'none',
+                              boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+                            }}
+                          >
+                            Open in Google Docs
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleCreateGoogleDoc}
+                            disabled={googleDocStatus === 'creating'}
+                            style={{
+                              border: '1px solid var(--surface-border)',
+                              borderRadius: 999,
+                              padding: '10px 22px',
+                              background: googleDocStatus === 'creating' ? 'rgba(148, 163, 184, 0.2)' : '#fff',
+                              color: 'var(--accent)',
+                              cursor: googleDocStatus === 'creating' ? 'wait' : 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            {googleDocStatus === 'creating' ? 'Creating Google Doc…' : 'Create Google Doc'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleDownloadPdf}
+                          disabled={pdfStatus === 'generating'}
+                          style={{
+                            border: '1px solid var(--surface-border)',
+                            borderRadius: 999,
+                            padding: '10px 22px',
+                            background: pdfStatus === 'generating' ? 'rgba(148, 163, 184, 0.2)' : '#fff',
+                            color: 'var(--accent)',
+                            cursor: pdfStatus === 'generating' ? 'wait' : 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          {pdfStatus === 'generating' ? 'Generating PDF…' : 'Download PDF'}
+                        </button>
+                      </div>
+                    ) : null}
+                    {googleDocError ? (
+                      <span style={{ color: '#b91c1c', fontSize: 13 }}>{googleDocError}</span>
+                    ) : null}
+                    {pdfError ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{pdfError}</span> : null}
+                    {pdfStatus === 'success' ? (
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                        PDF saved successfully. You can regenerate it after making changes.
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

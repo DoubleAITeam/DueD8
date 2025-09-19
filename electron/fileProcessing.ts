@@ -104,10 +104,6 @@ async function parseDocx(filePath: string) {
     .join('\n');
 }
 
-async function parseTxt(filePath: string) {
-  return fs.readFile(filePath, 'utf8');
-}
-
 // PHASE 2: Central helper that normalises different document types for the chatbot.
 export async function processAssignmentUploads(files: UploadDescriptor[]): Promise<ProcessedFile[]> {
   const results: ProcessedFile[] = [];
@@ -123,8 +119,6 @@ export async function processAssignmentUploads(files: UploadDescriptor[]): Promi
       content = await parsePdf(file.path);
     } else if (ext === '.docx') {
       content = await parseDocx(file.path);
-    } else if (ext === '.txt') {
-      content = await parseTxt(file.path);
     } else {
       throw new Error(`Unsupported file type: ${ext || file.type || 'unknown'}`);
     }
@@ -161,7 +155,7 @@ export async function processRemoteAttachments(
     for (const attachment of attachments) {
       const name = attachment.name || `attachment-${index + 1}`;
       const ext = path.extname(name).toLowerCase();
-      if (!attachment.url || !['.pdf', '.docx', '.txt'].includes(ext)) {
+      if (!attachment.url || !['.pdf', '.docx'].includes(ext)) {
         index += 1;
         continue;
       }

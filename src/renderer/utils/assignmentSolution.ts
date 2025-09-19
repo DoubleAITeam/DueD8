@@ -6,10 +6,6 @@ type GeneratePdfOptions = {
   content: string;
 };
 
-type GenerateTxtOptions = {
-  content: string;
-};
-
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
@@ -326,15 +322,8 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
   };
 }
 
-function generateTxt({ content }: GenerateTxtOptions): ArtifactResult {
-  return {
-    blob: new Blob([content], { type: 'text/plain;charset=utf-8' }),
-    mimeType: 'text/plain'
-  };
-}
-
 export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx' | 'txt';
+  extension: 'pdf' | 'docx';
   content: string;
 }): Promise<ArtifactResult> {
   if (options.extension === 'pdf') {
@@ -343,7 +332,7 @@ export async function createSolutionArtifact(options: {
   if (options.extension === 'docx') {
     return generateDocx({ content: options.content });
   }
-  return generateTxt({ content: options.content });
+  throw new Error(`Unsupported extension: ${options.extension}`);
 }
 
 export function buildSolutionContent(options: {
@@ -415,4 +404,32 @@ export function buildSolutionContent(options: {
   ].filter(Boolean);
 
   return segments.join('\n\n');
+}
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function solutionTextToHtml(content: string) {
+  const blocks = content
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (!blocks.length) {
+    return '<p>No content generated.</p>';
+  }
+
+  return blocks
+    .map((block) => {
+      const lines = block.split(/\n/);
+      const escaped = lines.map((line) => escapeHtml(line)).join('<br/>');
+      return `<div class="segment"><p>${escaped}</p></div>`;
+    })
+    .join('');
 }
