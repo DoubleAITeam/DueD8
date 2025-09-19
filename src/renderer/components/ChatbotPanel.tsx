@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment, Course } from '../../lib/canvasClient';
 import type { AssignmentContextEntry, ViewState } from '../state/store';
 import { useStore } from '../state/store';
+import { featureFlags } from '../../shared/featureFlags';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -37,7 +38,81 @@ function summarizeContexts(contexts: AssignmentContextEntry[]) {
   }).join('\n');
 }
 
-// PHASE 3: Compose a lightweight stand-in response that mirrors the Study Coach tone for transparency.
+const GREETING_KEYWORDS = new Set([
+  'hi',
+  'hello',
+  'hey',
+  'hiya',
+  'good morning',
+  'good afternoon',
+  'good evening'
+]);
+
+function tokeniseForSimilarity(text: string) {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2);
+}
+
+function computeSimilarityScore(a: string, b: string) {
+  const tokensA = new Set(tokeniseForSimilarity(a));
+  const tokensB = new Set(tokeniseForSimilarity(b));
+  if (!tokensA.size || !tokensB.size) {
+    return 0;
+  }
+  let overlap = 0;
+  tokensA.forEach((token) => {
+    if (tokensB.has(token)) {
+      overlap += 1;
+    }
+  });
+  return overlap / Math.min(tokensA.size, tokensB.size);
+}
+
+function compressResponseSegments(response: string) {
+  const segments = response.split('\n');
+  const seen = new Set<string>();
+  const result: string[] = [];
+  segments.forEach((segment) => {
+    const trimmed = segment.trim();
+    if (!trimmed.length) {
+      if (result.length && result[result.length - 1] !== '') {
+        result.push('');
+      }
+      return;
+    }
+    const normalised = trimmed
+      .replace(/^[•*\-]\s*/, '')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+    if (!seen.has(normalised)) {
+      seen.add(normalised);
+      result.push(trimmed);
+    }
+  });
+  while (result.length && result[result.length - 1] === '') {
+    result.pop();
+  }
+  return result.join('\n');
+}
+
+function postProcessAssistantResponse(pending: string, previous?: string) {
+  if (!previous?.trim()) {
+    return pending;
+  }
+  const similarity = computeSimilarityScore(pending, previous);
+  if (similarity <= 0.6) {
+    return pending;
+  }
+  const compressed = compressResponseSegments(pending);
+  const closing = 'Let me know if you want a different angle next time.';
+  if (compressed.includes(closing)) {
+    return compressed;
+  }
+  return `${compressed}\n\n${closing}`;
+}
+
 function composeAssistantResponse(options: {
   view: ViewState;
   message: string;
@@ -49,6 +124,7 @@ function composeAssistantResponse(options: {
   upcomingAssignments: Assignment[];
   assignmentContexts: AssignmentContextEntry[];
   courseLookup: Record<number, string>;
+  friendly: boolean;
 }) {
   const {
     view,
@@ -60,31 +136,66 @@ function composeAssistantResponse(options: {
     courseAssignments,
     upcomingAssignments,
     assignmentContexts,
-    courseLookup
+    courseLookup,
+    friendly
   } = options;
 
-  const lines: string[] = [];
-  lines.push(`Study Coach reply for ${profileName ? `${profileName}'s` : 'your'} workspace.`);
-  lines.push(`You asked: "${message}"`);
+  const trimmedMessage = message.trim();
+  const lowered = trimmedMessage.toLowerCase();
+  const firstName = profileName?.split(' ')[0];
 
-  if (view.screen === 'assignment' && selectedAssignment) {
-    lines.push(
-      `Focus assignment: ${selectedAssignment.name}${assignmentCourseName ? ` (${assignmentCourseName})` : ''}.`
-    );
-    lines.push(`Due: ${selectedAssignment.due_at ? new Date(selectedAssignment.due_at).toLocaleString() : 'No due date recorded.'}`);
-    lines.push('Latest uploaded context:');
-    lines.push(summarizeContexts(assignmentContexts));
-  } else if (view.screen === 'course' && selectedCourse) {
-    lines.push(`Course spotlight: ${selectedCourse.name}.`);
-    lines.push('Upcoming work for this course:');
-    lines.push(formatAssignmentsSummary(courseAssignments, courseLookup));
-  } else {
-    lines.push('Here is a snapshot of upcoming responsibilities:');
-    lines.push(formatAssignmentsSummary(upcomingAssignments, courseLookup));
+  if (friendly && GREETING_KEYWORDS.has(lowered)) {
+    const targetName = firstName ? (firstName.toLowerCase() === 'ahmed' ? 'Ahmed' : firstName) : 'there';
+    return `Hi ${targetName}! I'm DueD8 Study Coach—ready whenever you want to plan, prioritise, or ask a question.`;
   }
 
-  lines.push('Let me know if you want timelines, study plans, or a deeper breakdown!');
-  return lines.join('\n\n');
+  const sections: string[] = [];
+  if (friendly) {
+    sections.push(`Hey${firstName ? ` ${firstName}` : ''}, let's tackle “${trimmedMessage}.”`);
+  } else {
+    sections.push(`You asked: "${trimmedMessage}"`);
+  }
+
+  if (view.screen === 'assignment' && selectedAssignment) {
+    const due = selectedAssignment.due_at
+      ? new Date(selectedAssignment.due_at).toLocaleString()
+      : 'No due date recorded';
+    sections.push(
+      `Focus: ${selectedAssignment.name}${assignmentCourseName ? ` (${assignmentCourseName})` : ''}. Due ${due}.`
+    );
+    const contextSummary = summarizeContexts(assignmentContexts);
+    if (contextSummary.trim().length) {
+      sections.push(`Recent context:\n${contextSummary}`);
+    }
+    const actionItems = [
+      'Outline the key deliverables before you start drafting.',
+      'Block time for a rough pass and a final review.',
+      'Note any unclear expectations so we can clarify them early.'
+    ];
+    sections.push(`Next steps to keep momentum:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
+  } else if (view.screen === 'course' && selectedCourse) {
+    sections.push(`Course spotlight: ${selectedCourse.name}.`);
+    sections.push('Upcoming work:');
+    sections.push(formatAssignmentsSummary(courseAssignments, courseLookup));
+    const actionItems = [
+      'Skim the syllabus or notes for this week.',
+      'Plan study blocks around the nearest deadline.',
+      'Flag topics that still feel shaky so we can review them.'
+    ];
+    sections.push(`Quick wins:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
+  } else {
+    sections.push('Here is what’s on your radar next:');
+    sections.push(formatAssignmentsSummary(upcomingAssignments, courseLookup));
+    const actionItems = [
+      'Choose the most urgent task and start there.',
+      'Balance high-effort and quick wins through the week.',
+      'Set checkpoints so nothing sneaks up on you.'
+    ];
+    sections.push(`Game plan ideas:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
+  }
+
+  sections.push('Ask me for a timeline, resource suggestions, or a deeper breakdown anytime.');
+  return sections.join('\n\n');
 }
 
 export default function ChatbotPanel({
@@ -103,10 +214,14 @@ export default function ChatbotPanel({
     : [];
   const chatbotMinimized = useStore((s) => s.chatbotMinimized);
   const setChatbotMinimized = useStore((s) => s.setChatbotMinimized);
+  const chatFriendly = featureFlags.chatFriendliness;
+  const baseGreeting = chatFriendly
+    ? `Hi${profileName ? ` ${profileName}` : ''}! I'm DueD8 Study Coach—here whenever you need a study boost.`
+    : `Hi${profileName ? ` ${profileName}` : ''}! I'm your DueD8 study coach.`;
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: `Hi${profileName ? ` ${profileName}` : ''}! I'm your DueD8 study coach.`
+      content: baseGreeting
     }
   ]);
   const [input, setInput] = useState('');
@@ -119,11 +234,11 @@ export default function ChatbotPanel({
       const next = [...prev];
       next[0] = {
         role: 'assistant',
-        content: `Hi${profileName ? ` ${profileName}` : ''}! I'm your DueD8 study coach.`
+        content: baseGreeting
       };
       return next;
     });
-  }, [profileName]);
+  }, [profileName, baseGreeting]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -165,6 +280,10 @@ export default function ChatbotPanel({
     setInput('');
     setLoading(true);
 
+    const lastAssistantMessage = [...messages]
+      .reverse()
+      .find((entry) => entry.role === 'assistant')?.content;
+
     const reply = composeAssistantResponse({
       view,
       message: trimmed,
@@ -175,11 +294,13 @@ export default function ChatbotPanel({
       courseAssignments,
       upcomingAssignments,
       assignmentContexts: activeAssignmentContexts,
-      courseLookup
+      courseLookup,
+      friendly: chatFriendly
     });
+    const processedReply = postProcessAssistantResponse(reply, lastAssistantMessage);
 
     window.setTimeout(() => {
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: processedReply }]);
       setLoading(false);
     }, 200);
   }

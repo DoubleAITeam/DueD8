@@ -131,6 +131,7 @@ type CanvasAssignmentDetail = {
   description?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  html_url?: string | null;
   attachments?: CanvasAttachment[];
 };
 
@@ -159,7 +160,16 @@ function htmlToPlainText(html: string) {
 
 ipcMain.handle(
   'assignments:fetchInstructorContext',
-  async (_event, payload): Promise<IpcResult<{ entries: Array<{ fileName: string; content: string; uploadedAt: number }> }>> => {
+  async (
+    _event,
+    payload
+  ): Promise<
+    IpcResult<{
+      entries: Array<{ fileName: string; content: string; uploadedAt: number }>;
+      attachments: Array<{ id: string; name: string; url: string; contentType: string | null }>;
+      htmlUrl: string | null;
+    }>
+  > => {
     try {
       const { assignmentId, courseId } = AssignmentInstructorContextRequest.parse(payload);
       const result = await fetchCanvasJson({
@@ -172,7 +182,7 @@ ipcMain.handle(
 
       const assignment = (result.data ?? null) as CanvasAssignmentDetail | null;
       if (!assignment) {
-        return success({ entries: [] });
+        return success({ entries: [], attachments: [], htmlUrl: null });
       }
 
       const attachments = Array.isArray(assignment.attachments) ? assignment.attachments : [];
@@ -212,6 +222,22 @@ ipcMain.handle(
         };
       });
 
+      const attachmentSummaries = attachments
+        .map((attachment, index) => {
+          if (!attachment?.url) {
+            return null;
+          }
+          const displayName =
+            attachment.display_name || attachment.filename || `Attachment ${attachment.id ?? index + 1}`;
+          return {
+            id: String(attachment.id ?? index + 1),
+            name: displayName,
+            url: attachment.url,
+            contentType: attachment.content_type ?? null
+          };
+        })
+        .filter((entry): entry is { id: string; name: string; url: string; contentType: string | null } => Boolean(entry));
+
       const entries = [...attachmentEntries];
       const description = typeof assignment.description === 'string' ? assignment.description : '';
       if (description.trim().length) {
@@ -227,7 +253,11 @@ ipcMain.handle(
         }
       }
 
-      return success({ entries });
+      return success({
+        entries,
+        attachments: attachmentSummaries,
+        htmlUrl: typeof assignment.html_url === 'string' ? assignment.html_url : null
+      });
     } catch (error) {
       mainError('assignments:fetchInstructorContext failed', (error as Error).message);
       return failure((error as Error).message || 'Failed to load instructor context');

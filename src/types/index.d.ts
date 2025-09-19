@@ -40,6 +40,8 @@ declare global {
         }): Promise<
           IpcResult<{
             entries: Array<{ fileName: string; content: string; uploadedAt: number }>;
+            attachments: Array<{ id: string; name: string; url: string; contentType: string | null }>;
+            htmlUrl: string | null;
           }>
         >;
       };

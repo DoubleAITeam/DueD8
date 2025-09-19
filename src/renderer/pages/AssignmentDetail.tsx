@@ -4,9 +4,13 @@ import { useStore, type AssignmentContextEntry } from '../state/store';
 import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
 import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
+import { featureFlags } from '../../shared/featureFlags';
+import { isActualAssignment } from '../../shared/assignments';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt'];
 const STUDY_COACH_LABEL = 'Study Coach';
+
+type AttachmentLink = { id: string; name: string; url: string; contentType: string | null };
 
 function ContextList({ entries }: { entries: AssignmentContextEntry[] }) {
   return (
@@ -47,6 +51,114 @@ function ContextList({ entries }: { entries: AssignmentContextEntry[] }) {
   );
 }
 
+function AttachmentsCard({
+  attachments,
+  canvasLink
+}: {
+  attachments: AttachmentLink[];
+  canvasLink: string | null;
+}) {
+  if (!featureFlags.assignmentSourceLinks) {
+    return null;
+  }
+
+  const primaryAttachment = attachments[0] ?? null;
+  const additionalAttachments = attachments.slice(1);
+
+  if (!primaryAttachment && !canvasLink) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--surface-border)',
+        borderRadius: 16,
+        padding: 20,
+        background: 'rgba(255,255,255,0.85)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <strong>Attachments</strong>
+        <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          Open the original files provided with this assignment.
+        </span>
+      </div>
+
+      {primaryAttachment ? (
+        <a
+          key={primaryAttachment.id}
+          href={primaryAttachment.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            textDecoration: 'none',
+            border: '1px solid var(--surface-border)',
+            borderRadius: 12,
+            padding: '12px 16px',
+            background: '#fff'
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>Original assignment file</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{primaryAttachment.name}</span>
+        </a>
+      ) : null}
+
+      {additionalAttachments.length ? (
+        <ul
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}
+        >
+          {additionalAttachments.map((attachment) => (
+            <li key={attachment.id}>
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  color: 'var(--accent)',
+                  textDecoration: 'none',
+                  fontWeight: 500
+                }}
+              >
+                {attachment.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {canvasLink ? (
+        <a
+          href={canvasLink}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            alignSelf: 'flex-start',
+            textDecoration: 'none',
+            color: 'var(--accent)',
+            fontWeight: 600
+          }}
+        >
+          View on Canvas
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 function safeDownloadName(input: string) {
   return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
 }
@@ -67,6 +179,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const inputRef = useRef<HTMLInputElement>(null);
   const solutionUrlRef = useRef<string | null>(null);
   const lastContextSignatureRef = useRef<string | null>(null);
+  const guardSignatureRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -84,6 +197,12 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const [solutionFile, setSolutionFile] = useState<
     { url: string; fileName: string; mimeType: string } | null
   >(null);
+  const [attachments, setAttachments] = useState<AttachmentLink[]>([]);
+  const [canvasLink, setCanvasLink] = useState<string | null>(assignment?.html_url ?? null);
+  const guardEnabled = featureFlags.assignmentSolveGuard;
+  const [solveCheck, setSolveCheck] = useState<
+    { status: 'idle' | 'checking' | 'allowed' | 'blocked'; reason?: string; confidence?: number }
+  >({ status: guardEnabled ? 'checking' : 'allowed' });
 
   const dueText = useMemo(() => {
     if (!assignment?.due_at) {
@@ -106,6 +225,9 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     [instructorContexts, userContexts]
   );
   const hasGuideContext = combinedContexts.length > 0;
+  const guardChecking = guardEnabled && solveCheck.status === 'checking';
+  const solveGuardBlocked = guardEnabled && solveCheck.status === 'blocked';
+  const solveButtonDisabled = !hasGuideContext || guardChecking || solveGuardBlocked;
 
   useEffect(() => {
     return () => {
@@ -132,6 +254,9 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     }
     setSolutionFile(null);
     lastContextSignatureRef.current = null;
+    setAttachments([]);
+    setCanvasLink(assignment?.html_url ?? null);
+    setSolveCheck({ status: guardEnabled ? 'checking' : 'allowed' });
   }, [assignment?.id]);
 
   useEffect(() => {
@@ -156,19 +281,25 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         if (cancelled) return;
         if (!response.ok) {
           setInstructorError(response.error);
+          setAttachments([]);
           return;
         }
         const entries = response.data.entries ?? [];
+        setAttachments(response.data.attachments ?? []);
+        if (typeof response.data.htmlUrl === 'string' && response.data.htmlUrl.length) {
+          setCanvasLink(response.data.htmlUrl);
+        }
         if (entries.length) {
           appendAssignmentContext(
             assignment.id,
             entries.map((entry) => ({ ...entry, source: 'instructor' as const }))
           );
         }
-      } catch (err) {
-        if (!cancelled) {
-          setInstructorError((err as Error).message);
-        }
+        } catch (err) {
+          if (!cancelled) {
+            setInstructorError((err as Error).message);
+            setAttachments([]);
+          }
       } finally {
         if (!cancelled) {
           setInstructorLoading(false);
@@ -182,6 +313,72 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       cancelled = true;
     };
   }, [assignment, hasInstructorContext, appendAssignmentContext]);
+
+  useEffect(() => {
+    if (!guardEnabled) {
+      if (solveCheck.status !== 'allowed') {
+        setSolveCheck({ status: 'allowed' });
+      }
+      guardSignatureRef.current = null;
+      return;
+    }
+    if (!assignment) {
+      setSolveCheck({ status: 'idle' });
+      guardSignatureRef.current = null;
+      return;
+    }
+
+    const signature = combinedContexts
+      .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
+      .join('|');
+    const combinedText = combinedContexts.map((entry) => entry.content).join('\n\n');
+
+    if (!combinedText.trim().length) {
+      guardSignatureRef.current = signature.length ? signature : null;
+      setSolveCheck({ status: 'allowed', confidence: 0.5 });
+      return;
+    }
+
+    if (
+      guardSignatureRef.current === signature &&
+      (solveCheck.status === 'allowed' || solveCheck.status === 'blocked')
+    ) {
+      return;
+    }
+
+    guardSignatureRef.current = signature;
+    let cancelled = false;
+    setSolveCheck({ status: 'checking' });
+
+    (async () => {
+      try {
+        const result = await isActualAssignment(assignment, combinedText);
+        if (cancelled) {
+          return;
+        }
+        if (result.isAssignment) {
+          setSolveCheck({ status: 'allowed', confidence: result.confidence, reason: result.reason });
+        } else {
+          setSolveCheck({ status: 'blocked', confidence: result.confidence, reason: result.reason });
+          if (solutionUrlRef.current) {
+            URL.revokeObjectURL(solutionUrlRef.current);
+            solutionUrlRef.current = null;
+          }
+          setSolutionFile(null);
+          setSolutionStatus('idle');
+        }
+      } catch (err) {
+        console.error('Assignment guard check failed', err);
+        if (!cancelled) {
+          setSolveCheck({ status: 'allowed' });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assignment, combinedContexts, guardEnabled, solveCheck.status]);
 
   useEffect(() => {
     if (!assignment || !hasGuideContext) {
@@ -199,6 +396,15 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       setGuideStatus('idle');
       activeGuideRunRef.current += 1;
       return;
+    }
+
+    if (guardEnabled) {
+      if (solveCheck.status === 'checking') {
+        return;
+      }
+      if (solveCheck.status === 'blocked') {
+        return;
+      }
     }
 
     const signature = combinedContexts
@@ -295,10 +501,24 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     return () => {
       cancelled = true;
     };
-  }, [assignment, combinedContexts, courseName, dueText, hasGuideContext, instructorContexts, solutionStatus, userContexts]);
+  }, [
+    assignment,
+    combinedContexts,
+    courseName,
+    dueText,
+    guardEnabled,
+    hasGuideContext,
+    instructorContexts,
+    solutionStatus,
+    solveCheck.status,
+    userContexts
+  ]);
 
   const retrySolutionGeneration = () => {
     if (!assignment) {
+      return;
+    }
+    if (solveGuardBlocked || guardChecking) {
       return;
     }
     lastContextSignatureRef.current = null;
@@ -507,6 +727,28 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         </div>
       </div>
 
+      {solveGuardBlocked ? (
+        <div
+          style={{
+            borderRadius: 14,
+            border: '1px solid #fecaca',
+            background: '#fef2f2',
+            color: '#991b1b',
+            padding: '14px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}
+        >
+          <strong>This looks like instructions, not a student deliverable. I will not auto-complete this.</strong>
+          {solveCheck.reason ? (
+            <span style={{ fontSize: 13 }}>{solveCheck.reason}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <AttachmentsCard attachments={attachments} canvasLink={canvasLink} />
+
       <div
         onDragOver={(event) => {
           event.preventDefault();
@@ -651,8 +893,33 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                 as context and only runs when requested. No model names are shown—just student-friendly guidance.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <strong>Completed assignment file</strong>
-                {solutionStatus === 'generating' || solutionStatus === 'idle' ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+                  <strong>Completed assignment file</strong>
+                  <button
+                    type="button"
+                    onClick={retrySolutionGeneration}
+                    disabled={solveButtonDisabled}
+                    style={{
+                      border: '1px solid var(--surface-border)',
+                      borderRadius: 999,
+                      padding: '6px 18px',
+                      background: solveButtonDisabled ? 'rgba(148, 163, 184, 0.2)' : '#fff',
+                      color: solveButtonDisabled ? 'var(--text-secondary)' : 'var(--accent)',
+                      cursor: solveButtonDisabled ? 'not-allowed' : 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    Solve
+                  </button>
+                </div>
+                {guardChecking ? (
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    Checking if this is a student deliverable…
+                  </span>
+                ) : null}
+                {!guardChecking &&
+                !solveGuardBlocked &&
+                (solutionStatus === 'generating' || solutionStatus === 'idle') ? (
                   <span style={{ color: 'var(--text-secondary)' }}>
                     Preparing your completed assignment file…
                   </span>
@@ -671,12 +938,13 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                     <button
                       type="button"
                       onClick={retrySolutionGeneration}
+                      disabled={solveGuardBlocked}
                       style={{
                         border: '1px solid var(--surface-border)',
                         borderRadius: 999,
                         padding: '6px 14px',
-                        background: '#fff',
-                        cursor: 'pointer'
+                        background: solveGuardBlocked ? 'rgba(148, 163, 184, 0.2)' : '#fff',
+                        cursor: solveGuardBlocked ? 'not-allowed' : 'pointer'
                       }}
                     >
                       Try again
