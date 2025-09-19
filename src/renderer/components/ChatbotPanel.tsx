@@ -3,12 +3,14 @@ import type { Assignment, Course } from '../../lib/canvasClient';
 import type { AssignmentContextEntry, ViewState } from '../state/store';
 import { useStore } from '../state/store';
 import { featureFlags } from '../../shared/featureFlags';
+import { deriveCourseGrade } from '../../lib/gradeUtils';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 type Props = {
   view: ViewState;
   profileName?: string;
+  courses: Course[];
   selectedCourse: Course | null;
   selectedAssignment: Assignment | null;
   courseAssignments: Assignment[];
@@ -47,6 +49,200 @@ const GREETING_KEYWORDS = new Set([
   'good afternoon',
   'good evening'
 ]);
+
+type StudentProfile = {
+  preferredName?: string;
+  academicGoal?: string;
+  confidentCourse?: string;
+  challengeCourse?: string;
+  studyHabits?: string;
+  supportNeeds?: string;
+};
+
+type ProfileQuestion = {
+  key: keyof StudentProfile;
+  prompt: string;
+  acknowledgement: (answer: string, profile: StudentProfile) => string;
+};
+
+const PROFILE_QUESTIONS: ProfileQuestion[] = [
+  {
+    key: 'preferredName',
+    prompt: 'To personalise things, what name would you like me to use when we chat?',
+    acknowledgement: (answer) => {
+      const chosen = answer.trim() || 'friend';
+      return `Thanks! I'll call you ${chosen}.`;
+    }
+  },
+  {
+    key: 'academicGoal',
+    prompt: 'What academic goal are you most focused on this term—GPA, mastering a course, something else?',
+    acknowledgement: (answer) => `Great, keeping "${answer.trim()}" in mind will help me prioritise your plan.`
+  },
+  {
+    key: 'confidentCourse',
+    prompt: 'Which course or subject feels most in your control right now?',
+    acknowledgement: (answer) =>
+      answer.trim()
+        ? `Love that you feel confident in ${answer.trim()}. We can use it as a momentum booster.`
+        : 'Got it—confidence levels noted.'
+  },
+  {
+    key: 'challengeCourse',
+    prompt: 'Which course tends to demand the most energy so I can keep an eye on it for you?',
+    acknowledgement: (answer) =>
+      answer.trim()
+        ? `I’ll make sure we keep ${answer.trim()} on the radar.`
+        : 'Alright, I’ll still watch for the toughest spots.'
+  },
+  {
+    key: 'studyHabits',
+    prompt: 'How do you prefer to schedule your work—short daily sessions, weekend sprints, study groups?',
+    acknowledgement: (answer) =>
+      answer.trim()
+        ? `Noted—${answer.trim()} helps me shape suggestions that actually fit your rhythm.`
+        : 'Flexible approach noted. We can iterate together.'
+  },
+  {
+    key: 'supportNeeds',
+    prompt: 'Any upcoming exams, projects, or specific support you want me to be proactive about?',
+    acknowledgement: (answer) =>
+      answer.trim()
+        ? `Thanks for sharing. I’ll keep "${answer.trim()}" front and centre.`
+        : 'All good—I’ll surface anything urgent as it appears.'
+  }
+];
+
+const LETTER_GRADE_TO_SCORE: Record<string, number> = {
+  'A+': 98,
+  A: 95,
+  'A-': 91,
+  'B+': 88,
+  B: 85,
+  'B-': 81,
+  'C+': 78,
+  C: 75,
+  'C-': 71,
+  'D+': 68,
+  D: 65,
+  'D-': 61,
+  F: 50
+};
+
+function letterToScore(letter?: string) {
+  if (!letter) return null;
+  const normalised = letter.trim().toUpperCase();
+  return LETTER_GRADE_TO_SCORE[normalised] ?? null;
+}
+
+function summariseStudentProfile(profile: StudentProfile) {
+  const lines: string[] = [];
+  if (profile.academicGoal) {
+    lines.push(`• Goal: ${profile.academicGoal}`);
+  }
+  if (profile.confidentCourse) {
+    lines.push(`• Confident in: ${profile.confidentCourse}`);
+  }
+  if (profile.challengeCourse) {
+    lines.push(`• Needs extra focus: ${profile.challengeCourse}`);
+  }
+  if (profile.studyHabits) {
+    lines.push(`• Preferred routine: ${profile.studyHabits}`);
+  }
+  if (profile.supportNeeds) {
+    lines.push(`• Watch-outs: ${profile.supportNeeds}`);
+  }
+  if (!lines.length) {
+    return '';
+  }
+  return `Here’s what I noted about you:\n${lines.join('\n')}`;
+}
+
+function rankCourseGrades(
+  courses: Course[],
+  comparator: (candidate: number | null, currentBest: number | null) => boolean
+) {
+  let selected: { course: Course; display: string; scoreValue: number | null } | null = null;
+  courses.forEach((course) => {
+    const summary = deriveCourseGrade(course);
+    if (summary.status !== 'complete') return;
+    const score = typeof summary.score === 'number' ? summary.score : letterToScore(summary.grade);
+    const scoreValue = typeof score === 'number' && !Number.isNaN(score) ? score : null;
+    const display = summary.display;
+    if (!selected) {
+      selected = { course, display, scoreValue };
+      return;
+    }
+    if (comparator(scoreValue, selected.scoreValue)) {
+      selected = { course, display, scoreValue };
+    }
+  });
+  return selected;
+}
+
+function findBestCourseGrade(courses: Course[]) {
+  return rankCourseGrades(courses, (candidate, currentBest) => {
+    const candidateValue = candidate ?? -Infinity;
+    const currentBestValue = currentBest ?? -Infinity;
+    return candidateValue > currentBestValue;
+  });
+}
+
+function findLowestCourseGrade(courses: Course[]) {
+  return rankCourseGrades(courses, (candidate, currentBest) => {
+    const candidateValue = candidate ?? Infinity;
+    const currentBestValue = currentBest ?? Infinity;
+    return candidateValue < currentBestValue;
+  });
+}
+
+function answerSpecialQuestion(options: {
+  message: string;
+  courses: Course[];
+  studentProfile: StudentProfile;
+  profileName?: string;
+}) {
+  const { message, courses, studentProfile, profileName } = options;
+  const lowered = message.toLowerCase();
+
+  if (/(best|highest).*(grade|score)/.test(lowered)) {
+    const best = findBestCourseGrade(courses);
+    if (!best) {
+      return 'Canvas has not shared any current grades yet, but we can still map out upcoming work to keep every course in a strong position.';
+    }
+    const nickname = studentProfile.preferredName?.trim() || profileName?.split(' ')[0] || '';
+    return `Right now your strongest course looks like ${best.course.name} at ${best.display}. Brilliant work${
+      nickname ? `, ${nickname}` : ''
+    }—let’s keep that momentum going.`;
+  }
+
+  if (/(worst|lowest).*(grade|score)/.test(lowered)) {
+    if (!courses.length) {
+      return 'I do not see any Canvas courses synced yet, so let’s reconnect to gather real-time grade details.';
+    }
+    const nickname = studentProfile.preferredName?.trim() || profileName?.split(' ')[0] || '';
+    const toughest = findLowestCourseGrade(courses);
+    if (!toughest) {
+      return `Canvas has not posted updated grades yet${nickname ? `, ${nickname}` : ''}, but I can still help you prioritise assignments so nothing catches you off guard.`;
+    }
+    return `The course needing the most attention appears to be ${toughest.course.name} at ${toughest.display}. Let’s plan extra checkpoints and study blocks there.`;
+  }
+
+  if (/(what|tell).*(you know).*me/.test(lowered)) {
+    const summary = summariseStudentProfile(studentProfile);
+    if (!summary) {
+      return 'I’m still collecting your preferences. Share a bit about your goals, study habits, and any tough courses so I can tailor my guidance.';
+    }
+    return `${summary}\n\nIf anything changes, just let me know and I’ll update it.`;
+  }
+
+  if (/thank/.test(lowered)) {
+    const nickname = studentProfile.preferredName?.trim() || profileName?.split(' ')[0] || '';
+    return `Always happy to help${nickname ? `, ${nickname}` : ''}! Ready when you need me again.`;
+  }
+
+  return null;
+}
 
 function tokeniseForSimilarity(text: string) {
   return text
@@ -117,6 +313,7 @@ function composeAssistantResponse(options: {
   view: ViewState;
   message: string;
   profileName?: string;
+  studentProfile: StudentProfile;
   selectedCourse: Course | null;
   selectedAssignment: Assignment | null;
   assignmentCourseName?: string;
@@ -130,6 +327,7 @@ function composeAssistantResponse(options: {
     view,
     message,
     profileName,
+    studentProfile,
     selectedCourse,
     selectedAssignment,
     assignmentCourseName,
@@ -142,7 +340,8 @@ function composeAssistantResponse(options: {
 
   const trimmedMessage = message.trim();
   const lowered = trimmedMessage.toLowerCase();
-  const firstName = profileName?.split(' ')[0];
+  const primaryName = studentProfile.preferredName?.trim() || profileName?.split(' ')[0];
+  const firstName = primaryName?.split(' ')[0];
 
   if (friendly && GREETING_KEYWORDS.has(lowered)) {
     const targetName = firstName ? (firstName.toLowerCase() === 'ahmed' ? 'Ahmed' : firstName) : 'there';
@@ -151,9 +350,13 @@ function composeAssistantResponse(options: {
 
   const sections: string[] = [];
   if (friendly) {
-    sections.push(`Hey${firstName ? ` ${firstName}` : ''}, let's tackle “${trimmedMessage}.”`);
+    sections.push(`Hey${firstName ? ` ${firstName}` : ''}, keeping your goals in mind, let’s dig into “${trimmedMessage}.”`);
   } else {
     sections.push(`You asked: "${trimmedMessage}"`);
+  }
+
+  if (studentProfile.academicGoal) {
+    sections.push(`Goal check-in: ${studentProfile.academicGoal}.`);
   }
 
   if (view.screen === 'assignment' && selectedAssignment) {
@@ -168,9 +371,13 @@ function composeAssistantResponse(options: {
       sections.push(`Recent context:\n${contextSummary}`);
     }
     const actionItems = [
-      'Outline the key deliverables before you start drafting.',
+      studentProfile.studyHabits
+        ? `Match your ${studentProfile.studyHabits.toLowerCase()} routine to this assignment by locking in the first work session.`
+        : 'Outline the key deliverables before you start drafting.',
       'Block time for a rough pass and a final review.',
-      'Note any unclear expectations so we can clarify them early.'
+      studentProfile.supportNeeds
+        ? `Cross-check any notes about ${studentProfile.supportNeeds.toLowerCase()} so nothing slips.`
+        : 'Note any unclear expectations so we can clarify them early.'
     ];
     sections.push(`Next steps to keep momentum:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
   } else if (view.screen === 'course' && selectedCourse) {
@@ -180,16 +387,22 @@ function composeAssistantResponse(options: {
     const actionItems = [
       'Skim the syllabus or notes for this week.',
       'Plan study blocks around the nearest deadline.',
-      'Flag topics that still feel shaky so we can review them.'
+      studentProfile.challengeCourse && selectedCourse.name.toLowerCase().includes(studentProfile.challengeCourse.toLowerCase())
+        ? `Add an extra checkpoint for ${studentProfile.challengeCourse} so it stays manageable.`
+        : 'Flag topics that still feel shaky so we can review them.'
     ];
     sections.push(`Quick wins:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
   } else {
     sections.push('Here is what’s on your radar next:');
     sections.push(formatAssignmentsSummary(upcomingAssignments, courseLookup));
     const actionItems = [
-      'Choose the most urgent task and start there.',
+      studentProfile.studyHabits
+        ? `Blend your ${studentProfile.studyHabits.toLowerCase()} approach with the top deadline.`
+        : 'Choose the most urgent task and start there.',
       'Balance high-effort and quick wins through the week.',
-      'Set checkpoints so nothing sneaks up on you.'
+      studentProfile.supportNeeds
+        ? `Schedule reminders related to ${studentProfile.supportNeeds.toLowerCase()}.`
+        : 'Set checkpoints so nothing sneaks up on you.'
     ];
     sections.push(`Game plan ideas:\n${actionItems.map((item) => `• ${item}`).join('\n')}`);
   }
@@ -201,6 +414,7 @@ function composeAssistantResponse(options: {
 export default function ChatbotPanel({
   view,
   profileName,
+  courses,
   selectedCourse,
   selectedAssignment,
   courseAssignments,
@@ -215,13 +429,20 @@ export default function ChatbotPanel({
   const chatbotMinimized = useStore((s) => s.chatbotMinimized);
   const setChatbotMinimized = useStore((s) => s.setChatbotMinimized);
   const chatFriendly = featureFlags.chatFriendliness;
+  const [studentProfile, setStudentProfile] = useState<StudentProfile>({});
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const profileComplete = questionIndex >= PROFILE_QUESTIONS.length;
+  const preferredName = studentProfile.preferredName?.trim() || profileName;
   const baseGreeting = chatFriendly
-    ? `Hi${profileName ? ` ${profileName}` : ''}! I'm DueD8 Study Coach—here whenever you need a study boost.`
-    : `Hi${profileName ? ` ${profileName}` : ''}! I'm your DueD8 study coach.`;
+    ? `Hi${preferredName ? ` ${preferredName}` : ''}! I'm DueD8 Study Coach—here whenever you need a study boost.`
+    : `Hi${preferredName ? ` ${preferredName}` : ''}! I'm your DueD8 study coach.`;
+  const introMessage = !profileComplete && PROFILE_QUESTIONS[0]
+    ? `${baseGreeting}\n\nBefore we dive in, I’d love to learn a few things so my guidance feels personal. ${PROFILE_QUESTIONS[0].prompt}`
+    : `${baseGreeting}\n\nThanks for sharing your study preferences—ask me anything when you’re ready.`;
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: baseGreeting
+      content: introMessage
     }
   ]);
   const [input, setInput] = useState('');
@@ -232,13 +453,18 @@ export default function ChatbotPanel({
     setMessages((prev) => {
       if (!prev.length || prev[0].role !== 'assistant') return prev;
       const next = [...prev];
+      const updatedIntro = !profileComplete && questionIndex === 0 && PROFILE_QUESTIONS[0]
+        ? `${baseGreeting}\n\nBefore we dive in, I’d love to learn a few things so my guidance feels personal. ${PROFILE_QUESTIONS[0].prompt}`
+        : profileComplete
+          ? `${baseGreeting}\n\nThanks for sharing your study preferences—ask me anything when you’re ready.`
+          : baseGreeting;
       next[0] = {
         role: 'assistant',
-        content: baseGreeting
+        content: updatedIntro
       };
       return next;
     });
-  }, [profileName, baseGreeting]);
+  }, [profileName, baseGreeting, profileComplete, questionIndex]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -284,19 +510,48 @@ export default function ChatbotPanel({
       .reverse()
       .find((entry) => entry.role === 'assistant')?.content;
 
-    const reply = composeAssistantResponse({
-      view,
-      message: trimmed,
-      profileName,
-      selectedCourse,
-      selectedAssignment,
-      assignmentCourseName,
-      courseAssignments,
-      upcomingAssignments,
-      assignmentContexts: activeAssignmentContexts,
-      courseLookup,
-      friendly: chatFriendly
-    });
+    if (!profileComplete) {
+      const currentIndex = Math.min(questionIndex, PROFILE_QUESTIONS.length - 1);
+      const currentQuestion = PROFILE_QUESTIONS[currentIndex];
+      const updatedProfile: StudentProfile = {
+        ...studentProfile,
+        [currentQuestion.key]: trimmed
+      };
+      setStudentProfile(updatedProfile);
+      const acknowledgement = currentQuestion.acknowledgement(trimmed, updatedProfile);
+      setQuestionIndex((prev) => prev + 1);
+
+      const nextQuestion = PROFILE_QUESTIONS[currentIndex + 1];
+      const summary = summariseStudentProfile(updatedProfile);
+      const summarySection = summary ? `\n\n${summary}` : '';
+      const followUp = nextQuestion
+        ? `${acknowledgement}\n\n${nextQuestion.prompt}`
+        : `${acknowledgement}${summarySection}\n\nThat’s everything I need to personalise our chats—ask me anything about your courses or workload.`;
+
+      window.setTimeout(() => {
+        setMessages((prev) => [...prev, { role: 'assistant', content: followUp }]);
+        setLoading(false);
+      }, 200);
+      return;
+    }
+
+    const special = answerSpecialQuestion({ message: trimmed, courses, studentProfile, profileName });
+    const reply = special
+      ? special
+      : composeAssistantResponse({
+          view,
+          message: trimmed,
+          profileName,
+          studentProfile,
+          selectedCourse,
+          selectedAssignment,
+          assignmentCourseName,
+          courseAssignments,
+          upcomingAssignments,
+          assignmentContexts: activeAssignmentContexts,
+          courseLookup,
+          friendly: chatFriendly
+        });
     const processedReply = postProcessAssistantResponse(reply, lastAssistantMessage);
 
     window.setTimeout(() => {

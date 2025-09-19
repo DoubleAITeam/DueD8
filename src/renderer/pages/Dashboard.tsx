@@ -547,6 +547,7 @@ export default function Dashboard() {
       <ChatbotPanel
         view={view}
         profileName={profile?.name}
+        courses={courses}
         selectedCourse={selectedCourse}
         selectedAssignment={selectedAssignment}
         courseAssignments={courseAssignments}
