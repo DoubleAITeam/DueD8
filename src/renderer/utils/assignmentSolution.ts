@@ -416,3 +416,22 @@ export function buildSolutionContent(options: {
 
   return segments.join('\n\n');
 }
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function renderSolutionHtml(content: string): string {
+  const escaped = escapeHtml(content);
+  return `<!doctype html><html><head><meta charset="utf-8" />` +
+    '<style>' +
+    "body{font-family:'Inter','Segoe UI',sans-serif;padding:48px;background:#ffffff;color:#0f172a;line-height:1.6;}" +
+    "h1{font-size:24px;margin-bottom:16px;}" +
+    "pre{white-space:pre-wrap;font-size:14px;border:1px solid #e2e8f0;padding:24px;border-radius:12px;background:#f8fafc;}" +
+    '</style></head><body>' +
+    `<pre>${escaped}</pre>` +
+    '</body></html>';
+}

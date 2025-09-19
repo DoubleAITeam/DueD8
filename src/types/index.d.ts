@@ -42,6 +42,46 @@ declare global {
             entries: Array<{ fileName: string; content: string; uploadedAt: number }>;
           }>
         >;
+        getExportInfo(payload: { assignmentId: number }): Promise<
+          IpcResult<{
+            googleDocId: string | null;
+            googleDocUrl: string | null;
+            lastPdfPath: string | null;
+          }>
+        >;
+        createGoogleDoc(payload: {
+          assignmentId: number;
+          title?: string;
+          content: string;
+        }): Promise<
+          IpcResult<{
+            documentId: string;
+            documentUrl: string;
+          }>
+        >;
+        exportPdf(payload: {
+          assignmentId: number;
+          html: string;
+          courseCode?: string;
+          assignmentName?: string;
+        }): Promise<IpcResult<{ canceled: boolean; filePath?: string }>>;
+      };
+      tokens: {
+        checkAndConsume(payload: {
+          userId: string;
+          assignmentId: number;
+          requestedTokens: number;
+        }): Promise<
+          IpcResult<{
+            allowedTokens: number;
+            limited: boolean;
+            assignmentRemaining: number;
+            dailyRemaining: number;
+            requestedTokens: number;
+            assignmentUsed: number;
+            dailyUsed: number;
+          }>
+        >;
       };
     };
   }

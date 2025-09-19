@@ -19,7 +19,7 @@ export default defineConfig({
           entryFileNames: 'main.js',
           format: 'cjs'
         },
-        external: ['better-sqlite3'],
+        external: ['better-sqlite3', 'keytar'],
       }
     }
   },
@@ -44,7 +44,7 @@ export default defineConfig({
       rollupOptions: { input: 'src/renderer/index.html' }
     },
     optimizeDeps: {
-      exclude: ['better-sqlite3'],
+      exclude: ['better-sqlite3', 'keytar'],
     }
   },
 })

@@ -1,5 +1,5 @@
 // src/main/ipc.ts
-import { ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { z } from 'zod';
 import { getDb } from './db';
@@ -12,6 +12,12 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import { getAssignmentExportInfo, savePdfPath } from './assignmentExports';
+import { createAssignmentGoogleDoc } from './googleDocs';
+import { renderPdfFromHtml, savePdfToPath } from './pdf';
+import { checkAndConsumeTokens } from './tokenUsage';
+import { featureFlags } from '../src/config/featureFlags';
+import { MAX_TOKENS_PER_24H, MAX_TOKENS_PER_ASSIGNMENT } from '../src/config/tokens';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -24,6 +30,51 @@ const StudentSchema = z.object({
 const success = <T>(data: T): IpcResult<T> => ({ ok: true, data });
 const failure = (error: string, status?: number): IpcResult<never> =>
   status === undefined ? { ok: false, error } : { ok: false, error, status };
+
+const AssignmentIdSchema = z.object({ assignmentId: z.number().int().positive() });
+const TokenUsageSchema = z.object({
+  userId: z.string().min(1),
+  assignmentId: z.number().int().positive(),
+  requestedTokens: z.number().int().nonnegative()
+});
+const GoogleDocRequestSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  title: z.string().optional(),
+  content: z.string().min(1)
+});
+const PdfExportSchema = z.object({
+  assignmentId: z.number().int().positive(),
+  html: z.string().min(1),
+  courseCode: z.string().optional(),
+  assignmentName: z.string().optional()
+});
+
+function sanitizeCourseCode(courseCode?: string | null) {
+  if (!courseCode) {
+    return 'Course';
+  }
+  const cleaned = courseCode.replace(/[^a-zA-Z0-9]+/g, '');
+  return cleaned.length ? cleaned : 'Course';
+}
+
+function slugifyAssignment(name?: string | null) {
+  if (!name) {
+    return 'assignment';
+  }
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+  return slug.length ? slug : 'assignment';
+}
+
+function formatDateStamp(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}${month}${day}`;
+}
 
 ipcMain.handle('canvas:setToken', async (_event, token: string): Promise<IpcResult<null>> => {
   try {
@@ -234,6 +285,87 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle('assignments:getExportInfo', async (_event, payload) => {
+  try {
+    const { assignmentId } = AssignmentIdSchema.parse(payload ?? {});
+    const info = getAssignmentExportInfo(assignmentId);
+    return success({
+      googleDocId: info.googleDocId,
+      googleDocUrl: info.googleDocUrl,
+      lastPdfPath: info.lastPdfPath
+    });
+  } catch (error) {
+    mainError('assignments:getExportInfo failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to load export info');
+  }
+});
+
+ipcMain.handle('assignments:createGoogleDoc', async (_event, payload) => {
+  try {
+    if (!featureFlags.solveExports) {
+      return failure('Exports are disabled');
+    }
+    const { assignmentId, title, content } = GoogleDocRequestSchema.parse(payload ?? {});
+    const result = await createAssignmentGoogleDoc({
+      assignmentId,
+      title: title ?? 'DueD8 Submission',
+      content
+    });
+    return success(result);
+  } catch (error) {
+    mainError('assignments:createGoogleDoc failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create Google Doc');
+  }
+});
+
+ipcMain.handle('assignments:exportPdf', async (event, payload) => {
+  try {
+    if (!featureFlags.solveExports) {
+      return failure('Exports are disabled');
+    }
+    const { assignmentId, html, courseCode, assignmentName } = PdfExportSchema.parse(payload ?? {});
+    const defaultName = `${sanitizeCourseCode(courseCode)}_${slugifyAssignment(assignmentName)}_${formatDateStamp(new Date())}.pdf`;
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showSaveDialog(parent, {
+      defaultPath: defaultName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (result.canceled || !result.filePath) {
+      return success({ canceled: true });
+    }
+    const pdfBuffer = await renderPdfFromHtml(html);
+    await savePdfToPath(pdfBuffer, result.filePath);
+    savePdfPath(assignmentId, result.filePath);
+    mainLog('Saved PDF export for assignment', assignmentId, result.filePath);
+    return success({ canceled: false, filePath: result.filePath });
+  } catch (error) {
+    mainError('assignments:exportPdf failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to export PDF');
+  }
+});
+
+ipcMain.handle('tokens:checkAndConsume', async (_event, payload) => {
+  try {
+    const parsed = TokenUsageSchema.parse(payload ?? {});
+    if (!featureFlags.tokenGating) {
+      return success({
+        allowedTokens: parsed.requestedTokens,
+        limited: false,
+        assignmentRemaining: MAX_TOKENS_PER_ASSIGNMENT,
+        dailyRemaining: MAX_TOKENS_PER_24H,
+        requestedTokens: parsed.requestedTokens,
+        assignmentUsed: 0,
+        dailyUsed: 0
+      });
+    }
+    const result = checkAndConsumeTokens(parsed);
+    return success(result);
+  } catch (error) {
+    mainError('tokens:checkAndConsume failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to record token usage');
+  }
+});
 
 ipcMain.handle('students.add', (_e, payload) => {
   const s = StudentSchema.parse(payload);
