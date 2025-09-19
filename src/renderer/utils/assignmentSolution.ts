@@ -1,15 +1,174 @@
-type GenerateDocxOptions = {
-  content: string;
-};
+import { lintDeliverableText } from '../../../electron/ai/pipeline/lint';
+import type { Deliverable } from '../../../electron/ai/pipeline/writeDeliverable';
 
-type GeneratePdfOptions = {
-  content: string;
-};
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
 };
+
+type ContextOptions = {
+  extension: 'pdf' | 'docx';
+  assignmentName?: string | null;
+  courseName?: string;
+  contexts: Array<{ fileName: string; content: string }>;
+};
+
+type ContentOptions = {
+  extension: 'pdf' | 'docx';
+  content: string;
+};
+
+function deliverableToText(deliverable: Deliverable) {
+  const segments: string[] = [];
+  if (deliverable.title) {
+    segments.push(deliverable.title);
+  }
+  for (const section of deliverable.sections) {
+    if (section.heading) {
+      segments.push(section.heading);
+    }
+    segments.push(section.body ?? '');
+  }
+  if (deliverable.references?.length) {
+    segments.push('References');
+    segments.push(...deliverable.references);
+  }
+  return lintDeliverableText(segments.join('\n\n'));
+}
+
+function escapePdf(input: string) {
+  return input.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function generatePdfStream(content: string) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  const operations: string[] = [];
+  operations.push('BT');
+  operations.push('/F1 12 Tf');
+  operations.push('72 720 Td');
+  lines.forEach((line, index) => {
+    const escaped = escapePdf(line.length ? line : ' ');
+    operations.push(`(${escaped}) Tj`);
+    if (index < lines.length - 1) {
+      operations.push('0 -16 Td');
+    }
+  });
+  operations.push('ET');
+  return operations.join('\n');
+}
+
+function generatePdf(content: string): ArtifactResult {
+  const encoder = new TextEncoder();
+  const parts: string[] = [];
+  const offsets: number[] = [];
+  let length = 0;
+
+  const append = (chunk: string) => {
+    parts.push(chunk);
+    length += encoder.encode(chunk).length;
+  };
+
+  append('%PDF-1.4\n');
+
+  offsets[1] = length;
+  append('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+  offsets[2] = length;
+  append('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+
+  offsets[3] = length;
+  append(
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n'
+  );
+
+  const streamContent = generatePdfStream(content);
+  const streamLength = encoder.encode(streamContent).length;
+
+  offsets[4] = length;
+  append(`4 0 obj\n<< /Length ${streamLength} >>\nstream\n`);
+  append(`${streamContent}\n`);
+  append('endstream\nendobj\n');
+
+  offsets[5] = length;
+  append('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+
+  const xrefOffset = length;
+  append('xref\n');
+  append('0 6\n');
+  append('0000000000 65535 f \n');
+  for (let i = 1; i <= 5; i += 1) {
+    const offset = offsets[i] ?? 0;
+    append(`${offset.toString().padStart(10, '0')} 00000 n \n`);
+  }
+  append('trailer\n');
+  append('<< /Size 6 /Root 1 0 R >>\n');
+  append(`startxref\n${xrefOffset}\n`);
+  append('%%EOF');
+
+  const pdfBytes = encoder.encode(parts.join(''));
+  return {
+    blob: new Blob([pdfBytes], { type: 'application/pdf' }),
+    mimeType: 'application/pdf'
+  };
+}
+
+export async function createSolutionArtifact(options: ContextOptions | ContentOptions): Promise<ArtifactResult> {
+  if ('content' in options) {
+    if (options.extension === 'pdf') {
+      return generatePdf(options.content);
+    }
+    return generateDocxFromText(options.content);
+  }
+
+  const { assignmentName, courseName, contexts, extension } = options;
+  const raw = contexts.map((entry) => entry.content).join('\n\n');
+  if (!raw.trim().length) {
+    throw new Error('No assignment content available. Upload files before generating the deliverable.');
+  }
+
+  const response = await window.dued8.assignments.generateDeliverable({
+    raw,
+    assignmentName: assignmentName ?? undefined,
+    course: courseName ?? undefined
+  });
+
+  if (!response.ok) {
+    throw new Error(response.error || 'Deliverable generation failed.');
+  }
+
+  const { type, reason, deliverable, docx } = response.data;
+  if (type === 'instructions') {
+    throw new Error(reason ?? 'This file is instructions. Generate a guide instead.');
+  }
+
+  if (!deliverable) {
+    throw new Error('Deliverable payload missing.');
+  }
+
+  if (extension === 'docx') {
+    if (!docx) {
+      throw new Error('DOCX rendering failed.');
+    }
+    const buffer = new Uint8Array(docx);
+    return {
+      blob: new Blob([buffer], { type: DOCX_MIME }),
+      mimeType: DOCX_MIME
+    };
+  }
+
+  const text = deliverableToText(deliverable);
+  return generatePdf(text);
+}
+
+function crc32(data: Uint8Array) {
+  let crc = 0 ^ -1;
+  for (let i = 0; i < data.length; i += 1) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ data[i]) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
 
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -22,14 +181,6 @@ const CRC32_TABLE = (() => {
   }
   return table;
 })();
-
-function crc32(data: Uint8Array) {
-  let crc = 0 ^ -1;
-  for (let i = 0; i < data.length; i += 1) {
-    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ data[i]) & 0xff];
-  }
-  return (crc ^ -1) >>> 0;
-}
 
 function concatUint8Arrays(parts: Uint8Array[]) {
   const total = parts.reduce((sum, part) => sum + part.length, 0);
@@ -147,8 +298,7 @@ function createStoredZip(entries: Array<{ name: string; data: Uint8Array }>): Ui
   idx += 4;
   endView.setUint16(idx, 0, true);
 
-  const zipBody = concatUint8Arrays([...localParts, centralDir, endRecord]);
-  return zipBody;
+  return concatUint8Arrays([...localParts, centralDir, endRecord]);
 }
 
 function escapeXml(input: string) {
@@ -188,7 +338,7 @@ function createDocxParagraphs(content: string) {
     .join('');
 }
 
-async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactResult> {
+function generateDocxFromText(content: string): ArtifactResult {
   const encoder = new TextEncoder();
 
   const relationships =
@@ -208,7 +358,7 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
   const documentBody = createDocxParagraphs(content);
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" ' +
+    '<w:document xmlns:wpc="http://schemas.microsoft.com/office/2010/wordprocessingCanvas" ' +
     'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
     'xmlns:o="urn:schemas-microsoft-com:office:office" ' +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
@@ -221,7 +371,7 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
     'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ' +
     'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" ' +
     'xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" ' +
-    'xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" ' +
+    'xmlns:wne="http://schemas.microsoft.com/office/2006/wordml" ' +
     'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">' +
     '<w:body>' +
     documentBody +
@@ -240,150 +390,8 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
 
   return {
     blob: new Blob([zipBytes], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      type: DOCX_MIME
     }),
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    mimeType: DOCX_MIME
   };
-}
-
-function escapePdf(input: string) {
-  return input.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
-
-function generatePdfStream(content: string) {
-  const lines = content.replace(/\r\n/g, '\n').split('\n');
-  const operations: string[] = [];
-  operations.push('BT');
-  operations.push('/F1 12 Tf');
-  operations.push('72 720 Td');
-  lines.forEach((line, index) => {
-    const escaped = escapePdf(line.length ? line : ' ');
-    operations.push(`(${escaped}) Tj`);
-    if (index < lines.length - 1) {
-      operations.push('0 -16 Td');
-    }
-  });
-  operations.push('ET');
-  return operations.join('\n');
-}
-
-function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
-  const encoder = new TextEncoder();
-  const parts: string[] = [];
-  const offsets: number[] = [];
-  let length = 0;
-
-  const append = (chunk: string) => {
-    parts.push(chunk);
-    length += encoder.encode(chunk).length;
-  };
-
-  append('%PDF-1.4\n');
-
-  offsets[1] = length;
-  append('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-
-  offsets[2] = length;
-  append('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
-
-  offsets[3] = length;
-  append(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n'
-  );
-
-  const streamContent = generatePdfStream(content);
-  const streamLength = encoder.encode(streamContent).length;
-
-  offsets[4] = length;
-  append(`4 0 obj\n<< /Length ${streamLength} >>\nstream\n`);
-  append(`${streamContent}\n`);
-  append('endstream\nendobj\n');
-
-  offsets[5] = length;
-  append('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
-
-  const xrefOffset = length;
-  append('xref\n');
-  append('0 6\n');
-  append('0000000000 65535 f \n');
-  for (let i = 1; i <= 5; i += 1) {
-    const offset = offsets[i] ?? 0;
-    append(`${offset.toString().padStart(10, '0')} 00000 n \n`);
-  }
-  append('trailer\n');
-  append('<< /Size 6 /Root 1 0 R >>\n');
-  append(`startxref\n${xrefOffset}\n`);
-  append('%%EOF');
-
-  const pdfBytes = encoder.encode(parts.join(''));
-  return {
-    blob: new Blob([pdfBytes], { type: 'application/pdf' }),
-    mimeType: 'application/pdf'
-  };
-}
-
-export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx';
-  content: string;
-}): Promise<ArtifactResult> {
-  if (options.extension === 'pdf') {
-    return generatePdf({ content: options.content });
-  }
-  if (options.extension === 'docx') {
-    return generateDocx({ content: options.content });
-  }
-  throw new Error(`Unsupported artifact extension: ${options.extension}`);
-}
-
-export function buildSolutionContent(options: {
-  assignmentName?: string | null;
-  courseName?: string;
-  dueText?: string;
-  contexts: Array<{ fileName: string; content: string }>;
-}): string {
-  const { assignmentName, courseName, dueText, contexts } = options;
-  const title = assignmentName?.trim().length ? assignmentName.trim() : 'Assignment Submission';
-  const headerLines: string[] = [title];
-  if (courseName?.trim().length) {
-    headerLines.push(`Course: ${courseName.trim()}`);
-  }
-  if (dueText?.trim().length) {
-    headerLines.push(`Due: ${dueText.trim()}`);
-  }
-
-  const anchorContext = contexts[0];
-  const anchorSnippet = anchorContext?.content.replace(/\s+/g, ' ').trim() ?? '';
-  const anchorPreview = anchorSnippet.length > 220 ? `${anchorSnippet.slice(0, 220)}…` : anchorSnippet;
-
-  const introductionParts: string[] = [];
-  if (anchorContext) {
-    introductionParts.push(`This submission fulfills the directives set out in “${anchorContext.fileName}.”`);
-    if (anchorPreview) {
-      introductionParts.push(anchorPreview);
-    }
-  } else {
-    introductionParts.push('This submission fulfills the assignment requirements by integrating the provided materials into a cohesive response.');
-  }
-  const introduction = introductionParts.join(' ');
-
-  const supportingParagraphs = contexts.slice(1, 4).map((entry) => {
-    const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 220 ? `${snippet.slice(0, 220)}…` : snippet;
-    if (preview.length) {
-      return `Details from “${entry.fileName}” are incorporated directly into the work: ${preview}`;
-    }
-    return `Details from “${entry.fileName}” are incorporated directly into the work.`;
-  });
-
-  const conclusion =
-    'All deliverables described in the assignment have been completed and the response is ready for submission.';
-
-  const segments = [
-    headerLines.join('\n'),
-    introduction,
-    ...supportingParagraphs,
-    conclusion
-  ].filter((segment) => segment && segment.trim().length);
-
-  return segments.join('\n\n');
 }

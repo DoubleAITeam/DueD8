@@ -1,4 +1,6 @@
 import type { IpcResult } from '../shared/ipc';
+import type { AssignmentType } from '../../electron/ai/pipeline/classify';
+import type { Deliverable } from '../../electron/ai/pipeline/writeDeliverable';
 
 export {};
 
@@ -42,6 +44,23 @@ declare global {
             entries: Array<{ fileName: string; content: string; uploadedAt: number }>;
             attachments: Array<{ id: string; name: string; url: string; contentType: string | null }>;
             htmlUrl: string | null;
+          }>
+        >;
+        classifySubmission(payload: {
+          raw: string;
+          assignmentName?: string;
+          course?: string;
+        }): Promise<IpcResult<{ type: AssignmentType; reason?: string }>>;
+        generateDeliverable(payload: {
+          raw: string;
+          assignmentName?: string;
+          course?: string;
+        }): Promise<
+          IpcResult<{
+            type: AssignmentType;
+            reason?: string;
+            deliverable?: Deliverable;
+            docx?: ArrayBuffer;
           }>
         >;
       };

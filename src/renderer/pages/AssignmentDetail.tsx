@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
-import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
+import { createSolutionArtifact } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
 import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
 import { featureFlags } from '../../shared/featureFlags';
-import { isActualAssignment } from '../../shared/assignments';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx'];
 const STUDY_COACH_LABEL = 'Study Coach';
@@ -352,20 +351,29 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
 
     (async () => {
       try {
-        const result = await isActualAssignment(assignment, combinedText);
+        const response = await window.dued8.assignments.classifySubmission({
+          raw: combinedText,
+          assignmentName: assignment.name ?? undefined,
+          course: courseName ?? undefined
+        });
         if (cancelled) {
           return;
         }
-        if (result.isAssignment) {
-          setSolveCheck({ status: 'allowed', confidence: result.confidence, reason: result.reason });
-        } else {
-          setSolveCheck({ status: 'blocked', confidence: result.confidence, reason: result.reason });
+        if (!response.ok) {
+          setSolveCheck({ status: 'allowed' });
+          return;
+        }
+        const { type, reason } = response.data;
+        if (type === 'instructions') {
+          setSolveCheck({ status: 'blocked', reason: reason ?? 'This file is instructions. Generate a guide instead.' });
           if (solutionUrlRef.current) {
             URL.revokeObjectURL(solutionUrlRef.current);
             solutionUrlRef.current = null;
           }
           setSolutionFile(null);
           setSolutionStatus('idle');
+        } else {
+          setSolveCheck({ status: 'allowed', confidence: 0.9, reason: reason });
         }
       } catch (err) {
         console.error('Assignment guard check failed', err);
@@ -378,7 +386,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     return () => {
       cancelled = true;
     };
-  }, [assignment, combinedContexts, guardEnabled, solveCheck.status]);
+  }, [assignment, combinedContexts, courseName, guardEnabled, solveCheck.status]);
 
   useEffect(() => {
     if (!assignment || !hasGuideContext) {
@@ -455,16 +463,15 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
 
     const generate = async () => {
       try {
-        const content = buildSolutionContent({
+        const artifact = await createSolutionArtifact({
+          extension,
           assignmentName: assignment.name,
           courseName,
-          dueText,
           contexts: combinedContexts.map((entry) => ({
             fileName: entry.fileName,
             content: entry.content
           }))
         });
-        const artifact = await createSolutionArtifact({ extension, content });
         if (cancelled) {
           return;
         }
@@ -505,7 +512,6 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     assignment,
     combinedContexts,
     courseName,
-    dueText,
     guardEnabled,
     hasGuideContext,
     instructorContexts,
@@ -898,6 +904,11 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                       cursor: solveButtonDisabled ? 'not-allowed' : 'pointer',
                       fontWeight: 600
                     }}
+                    title={
+                      solveGuardBlocked
+                        ? solveCheck.reason ?? 'This file is instructions. Generate a guide instead.'
+                        : undefined
+                    }
                   >
                     Solve
                   </button>
