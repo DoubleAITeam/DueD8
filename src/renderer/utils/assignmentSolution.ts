@@ -6,10 +6,6 @@ type GeneratePdfOptions = {
   content: string;
 };
 
-type GenerateTxtOptions = {
-  content: string;
-};
-
 type ArtifactResult = {
   blob: Blob;
   mimeType: string;
@@ -326,15 +322,8 @@ function generatePdf({ content }: GeneratePdfOptions): ArtifactResult {
   };
 }
 
-function generateTxt({ content }: GenerateTxtOptions): ArtifactResult {
-  return {
-    blob: new Blob([content], { type: 'text/plain;charset=utf-8' }),
-    mimeType: 'text/plain'
-  };
-}
-
 export async function createSolutionArtifact(options: {
-  extension: 'pdf' | 'docx' | 'txt';
+  extension: 'pdf' | 'docx';
   content: string;
 }): Promise<ArtifactResult> {
   if (options.extension === 'pdf') {
@@ -343,7 +332,7 @@ export async function createSolutionArtifact(options: {
   if (options.extension === 'docx') {
     return generateDocx({ content: options.content });
   }
-  return generateTxt({ content: options.content });
+  throw new Error(`Unsupported artifact extension: ${options.extension}`);
 }
 
 export function buildSolutionContent(options: {
@@ -353,8 +342,8 @@ export function buildSolutionContent(options: {
   contexts: Array<{ fileName: string; content: string }>;
 }): string {
   const { assignmentName, courseName, dueText, contexts } = options;
-  const title = assignmentName?.trim().length ? assignmentName.trim() : 'Assignment';
-  const headerLines: string[] = [`${title} – Completed Submission`];
+  const title = assignmentName?.trim().length ? assignmentName.trim() : 'Assignment Submission';
+  const headerLines: string[] = [title];
   if (courseName?.trim().length) {
     headerLines.push(`Course: ${courseName.trim()}`);
   }
@@ -362,57 +351,39 @@ export function buildSolutionContent(options: {
     headerLines.push(`Due: ${dueText.trim()}`);
   }
 
-  const intro: string[] = [];
-  intro.push(
-    'This draft weaves together the provided instructions and supporting documents to deliver a polished response ready for review.'
-  );
-
-  const contextSummaries = contexts.slice(0, 4).map((entry, index) => {
-    const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 160 ? `${snippet.slice(0, 160)}…` : snippet;
-    return `${index + 1}. ${entry.fileName}: ${preview}`;
-  });
-
-  const planningLines: string[] = [];
-  planningLines.push('Planning Overview:');
-  planningLines.push('- Map each required deliverable to relevant excerpts from the uploaded materials.');
-  planningLines.push('- Structure the submission with clear sections (introduction, core evidence, reflective close).');
-  planningLines.push('- Cite the most authoritative sources from the context to justify conclusions.');
-
-  const bodySections: string[] = [];
   const anchorContext = contexts[0];
-  if (anchorContext) {
-    bodySections.push(
-      `Introduction: Summarise the overarching goal outlined in “${anchorContext.fileName}” and preview the supporting arguments.`
-    );
-  } else {
-    bodySections.push('Introduction: Present the main thesis and highlight the deliverables covered in this response.');
-  }
+  const anchorSnippet = anchorContext?.content.replace(/\s+/g, ' ').trim() ?? '';
+  const anchorPreview = anchorSnippet.length > 220 ? `${anchorSnippet.slice(0, 220)}…` : anchorSnippet;
 
-  contexts.slice(0, 3).forEach((entry, index) => {
+  const introductionParts: string[] = [];
+  if (anchorContext) {
+    introductionParts.push(`This submission fulfills the directives set out in “${anchorContext.fileName}.”`);
+    if (anchorPreview) {
+      introductionParts.push(anchorPreview);
+    }
+  } else {
+    introductionParts.push('This submission fulfills the assignment requirements by integrating the provided materials into a cohesive response.');
+  }
+  const introduction = introductionParts.join(' ');
+
+  const supportingParagraphs = contexts.slice(1, 4).map((entry) => {
     const snippet = entry.content.replace(/\s+/g, ' ').trim();
-    const preview = snippet.length > 200 ? `${snippet.slice(0, 200)}…` : snippet;
-    bodySections.push(
-      `Section ${index + 1}: Incorporate evidence from “${entry.fileName}” to address the rubric. Key takeaway: ${preview}`
-    );
+    const preview = snippet.length > 220 ? `${snippet.slice(0, 220)}…` : snippet;
+    if (preview.length) {
+      return `Details from “${entry.fileName}” are incorporated directly into the work: ${preview}`;
+    }
+    return `Details from “${entry.fileName}” are incorporated directly into the work.`;
   });
 
-  bodySections.push('Conclusion: Reinforce how each rubric item is satisfied and outline any follow-up steps before submission.');
-
-  const reflection: string[] = [];
-  reflection.push('Quality Check:');
-  reflection.push('- Proofread for clarity, tone, and adherence to submission guidelines.');
-  reflection.push('- Ensure citations or references match course expectations.');
-  reflection.push('- Confirm formatting and file naming follow instructor preferences.');
+  const conclusion =
+    'All deliverables described in the assignment have been completed and the response is ready for submission.';
 
   const segments = [
     headerLines.join('\n'),
-    intro.join('\n'),
-    contextSummaries.length ? ['Supporting Evidence Highlights:', ...contextSummaries].join('\n') : '',
-    planningLines.join('\n'),
-    ['Draft Blueprint:', ...bodySections].join('\n'),
-    reflection.join('\n')
-  ].filter(Boolean);
+    introduction,
+    ...supportingParagraphs,
+    conclusion
+  ].filter((segment) => segment && segment.trim().length);
 
   return segments.join('\n\n');
 }
