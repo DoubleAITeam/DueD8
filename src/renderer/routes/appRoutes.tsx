@@ -1,0 +1,40 @@
+import React, { useMemo } from 'react';
+import DashboardNew from '../pages/DashboardNew';
+import LegacyDashboard from '../pages/Dashboard';
+import Placeholder from '../pages/Placeholder';
+import { Router, Navigate } from './router';
+import { useFeatureFlags } from '../state/dashboard';
+
+const placeholder = (title: string) => <Placeholder title={title} />;
+
+export function AppRoutes() {
+  const { featureFlags } = useFeatureFlags();
+  const isNewDashboard = featureFlags.newDashboard;
+
+  const routes = useMemo(
+    () => [
+      { path: '/', element: isNewDashboard ? <DashboardNew /> : <Navigate to="/dashboard/legacy" /> },
+      { path: '/dashboard', element: isNewDashboard ? <DashboardNew /> : <Navigate to="/dashboard/legacy" /> },
+      { path: '/dashboard/legacy', element: <LegacyDashboard /> },
+      { path: '/assignments', element: placeholder('Assignments') },
+      { path: '/assignments/submit', element: placeholder('Submit Assignment') },
+      { path: '/classes', element: placeholder('Classes') },
+      { path: '/study-tools', element: placeholder('Study Tools') },
+      { path: '/study-tools/ai-writer', element: placeholder('AI Writer') },
+      { path: '/study-tools/study-coach', element: placeholder('Study Coach') },
+      { path: '/study-tools/flashcards', element: placeholder('Flashcards') },
+      { path: '/study-tools/quiz-generator', element: placeholder('Quiz Generator') },
+      { path: '/analytics', element: placeholder('Analytics') },
+      { path: '/calendar', element: placeholder('Calendar & Events') },
+      { path: '/grades', element: placeholder('Grades') },
+      { path: '/chatbot', element: placeholder('Chatbot') },
+      { path: '/pricing', element: placeholder('Upgrade Plan') },
+      { path: '/settings', element: placeholder('Settings') },
+      { path: '/logout', element: placeholder('Logout') },
+      { path: '*', element: <Navigate to={isNewDashboard ? '/dashboard' : '/dashboard/legacy'} /> }
+    ],
+    [isNewDashboard]
+  );
+
+  return <Router routes={routes} />;
+}

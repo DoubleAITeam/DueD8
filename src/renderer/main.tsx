@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { rendererError, rendererLog } from '../lib/logger';
 import { getPlatformBridge } from '../lib/platformBridge';
 import ConnectCanvas from './pages/ConnectCanvas';
-import Dashboard from './pages/Dashboard';
+import { AppRoutes } from './routes/appRoutes';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
 
@@ -112,7 +112,7 @@ function Root() {
 
   return (
     <>
-      {connected ? <Dashboard /> : <ConnectCanvas />}
+      {connected ? <AppRoutes /> : <ConnectCanvas />}
       <Toast />
     </>
   );
