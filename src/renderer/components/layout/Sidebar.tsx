@@ -11,7 +11,7 @@ import {
   Wand2Icon
 } from '../icons';
 import { Link, useNavigate } from '../../routes/router';
-import { calculateProgressPercent } from '../../utils/progress.js';
+import { calculateProgressPercent } from '../../utils/progress';
 import { useAiTokenStore } from '../../state/dashboard';
 import ProgressBar from '../ui/ProgressBar';
 

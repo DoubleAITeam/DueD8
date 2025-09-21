@@ -2,7 +2,7 @@
  * Describes the dashboard grid arrangement for regression checks.
  * @returns {{ rows: string[][] }}
  */
-function expectedDashboardLayout() {
+export function expectedDashboardLayout() {
   return {
     rows: [
       ['hero', 'quick-actions'],
@@ -11,7 +11,3 @@ function expectedDashboardLayout() {
     ]
   };
 }
-
-module.exports = {
-  expectedDashboardLayout
-};

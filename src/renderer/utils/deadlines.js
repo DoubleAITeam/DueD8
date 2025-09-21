@@ -4,7 +4,7 @@
  * @param {Date|null|undefined} selectedDate
  * @returns {Array}
  */
-function filterDeadlinesByDate(deadlines, selectedDate) {
+export function filterDeadlinesByDate(deadlines, selectedDate) {
   if (!selectedDate) {
     return deadlines;
   }
@@ -20,7 +20,3 @@ function filterDeadlinesByDate(deadlines, selectedDate) {
     return current === target;
   });
 }
-
-module.exports = {
-  filterDeadlinesByDate
-};
