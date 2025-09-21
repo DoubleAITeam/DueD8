@@ -1,22 +1,29 @@
+Working next on:
+- Calendar: allowing user to add their own event (add calendar category: general)
+- Analytics page
+- Chatbot page
+- Flashcards page
+- Quiz generator page
+- AI-Usage Token tracking
+- Settings page
+
 Issues to troubleshoot:
-    -AI deliverables of the assignments have html code in them and sometimes state that they're AI generated
-    -Chatbot is still too robotic and is programmed for only specific prompts, at least initially.
-    -Chatbot is also not very educated on the students' info. (ie "what's my grade in this class?" its response would be to recommend a study guide)
-    -Remove "This looks like instructions, not a student deliverable. I will not auto-complete this.
-    Signals were inconclusive for a student deliverable." AND "No model names are shown—just student-friendly guidance." from Assignment Page
-    
+- AI deliverables of the assignments have HTML code in them and sometimes state that they're AI generated
+- Chatbot is still too robotic and is programmed for only specific prompts, at least initially.
+- Chatbot is also not very educated on the students' info. (ie "what's my grade in this class?" its response would be to recommend a study guide)
+- Remove "This looks like instructions, not a student deliverable. I will not auto-complete this. Signals were inconclusive for a student deliverable." AND "No model names are shown—just student-friendly guidance." from Assignment Page
 
 Features to be added:
-    -Calendar section/page with assignment/event names under each day
-    -Gamification feature (badges for submitting assignments on time, maintaining certain grades/GPA, etc)
-    -Token price for almost every AI action/button. During testing, we need to track the average token usage per user per day so we can set freemium/PRO limits.
-    -Notes upload OR in-app note-taking/ (remnote??) (PRO feature: draw mode???); scanned and referenced by AI
-    -Ads for freemium members
-    -Study collaboration/username lookup and private chat
-    -Customizable theme (dark mode? PRO feature: custom backgrounds?)
-    -(PRO feature) Live transcription and notetaking of class/audio
-    -(PRO feature) YouTube transcript-pull for students to paste video links and AI generate notes from it
-    -(PRO feature) AI Study Tools page (AI Essay Writer/Helper, Flashcards (Quizlet integration), Quiz/Practice Questions Maker)
-    -(PRO feature) Analytics page to track progress in each class (Topics/Modules proficiency tracking)
-    -Generate calendar integration links with Apple and Google Calendar, directly linked to DueD8
-    -AI Slides Maker?
+- Calendar section/page with assignment/event names under each day
+- Gamification feature (badges for submitting assignments on time, maintaining certain grades/GPA, etc)
+- Token price for almost every AI action/button. During testing, we need to track the average token usage per user per day so we can set freemium/PRO limits.
+- Notes upload OR in-app note-taking/ (remnote??) (PRO feature: draw mode???); scanned and referenced by AI
+- Ads for freemium members
+- Study collaboration/username lookup and private chat
+- Customizable theme (dark mode? PRO feature: custom backgrounds?)
+- (PRO feature) Live transcription and notetaking of class/audio
+- (PRO feature) YouTube transcript-pull for students to paste video links and AI generate notes from it
+- (PRO feature) AI Study Tools page (AI Essay Writer/Helper, Flashcards (Quizlet integration), Quiz/Practice Questions Maker)
+- (PRO feature) Analytics page to track progress in each class (Topics/Modules proficiency tracking)
+- Generate calendar integration links with Apple and Google Calendar, directly linked to DueD8
+- AI Slides Maker?
