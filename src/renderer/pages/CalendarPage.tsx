@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
+import CreateEventPopup from '../components/CreateEventPopup';
 import {
   useDashboardData,
   useCalendarItems,
   useRawCourses,
   useCourseColors,
-  useSetCourseColor
+  useSetCourseColor,
+  useCustomEventActions,
+  useCustomEvents,
+  type CustomEvent as DashboardCustomEvent
 } from '../state/dashboard';
 import { coursePalette, getCourseColor } from '../utils/colors';
 
@@ -41,13 +45,19 @@ export default function CalendarPage() {
   const { status } = useDashboardData();
   const rawCourses = useRawCourses();
   const calendarItems = useCalendarItems();
+  const customEvents = useCustomEvents();
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [mode, setMode] = useState<'month' | 'week' | 'list'>('month');
   const [colorMenu, setColorMenu] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; date: string } | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [createPopupPosition, setCreatePopupPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const initializedFilters = useRef(false);
   const courseColors = useCourseColors();
   const setCourseColor = useSetCourseColor();
+  const { addCustomEvent, deleteCustomEvent } = useCustomEventActions();
 
   const courseLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -64,23 +74,35 @@ export default function CalendarPage() {
       color: courseColors[course.id] ?? getCourseColor(course.id, index)
     }));
 
-    if (calendarItems.some((item) => item.courseId == null)) {
+    if (calendarItems.some((item) => item.courseId == null && item.source === 'event')) {
       options.push({ id: 'general', label: 'Canvas events', color: '#64748b' });
+    }
+
+    if (calendarItems.some((item) => item.source === 'custom')) {
+      options.push({ id: 'custom', label: 'My events', color: '#059669' });
     }
 
     return options;
   }, [rawCourses, calendarItems, courseColors]);
 
   useEffect(() => {
-    if (!colorMenu) {
-      return;
-    }
-    function handleClick() {
-      setColorMenu(null);
-    }
+    if (!colorMenu) return;
+    const handleClick = () => setColorMenu(null);
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [colorMenu]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    const handleEscape = (e: KeyboardEvent) => e.key === 'Escape' && setContextMenu(null);
+    document.addEventListener('click', handleClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     setActiveFilters((prev) => {
@@ -110,7 +132,8 @@ export default function CalendarPage() {
   const filteredItems = useMemo(() => {
     if (!activeFilterSet.size) return [];
     return calendarItems.filter((item) => {
-      const filterId = item.courseId != null ? `course-${item.courseId}` : 'general';
+      const filterId = item.courseId != null ? `course-${item.courseId}` : 
+                      item.source === 'custom' ? 'custom' : 'general';
       return activeFilterSet.has(filterId);
     });
   }, [calendarItems, activeFilterSet]);
@@ -247,6 +270,74 @@ export default function CalendarPage() {
     setCurrentMonth(startOfMonth(new Date()));
   }
 
+  function handleCellRightClick(event: React.MouseEvent, date: Date) {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      date: toISODate(date)
+    });
+  }
+
+  function handleAddEvent() {
+    if (!contextMenu) return;
+    const dateTime = new Date(contextMenu.date + 'T09:00');
+    setSelectedDate(dateTime.toISOString().slice(0, 16));
+    // Capture scroll position at the time of popup creation
+    setCreatePopupPosition({ 
+      x: contextMenu.x, 
+      y: contextMenu.y + window.scrollY 
+    });
+    setShowCreateModal(true);
+    setContextMenu(null);
+  }
+
+  const categoryColors = {
+    'general': '#64748b',
+    'personal': '#059669', 
+    'study': '#7c3aed',
+    'reminder': '#dc2626'
+  };
+
+  function renderDeleteButton(event: DashboardCustomEvent) {
+    const eventColor = categoryColors[event.category] || '#64748b';
+    const eventTime = new Date(event.start_at).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    return (
+      <button 
+        key={event.id}
+        onClick={() => handleDeleteEvent(event.id)}
+        className="context-menu-delete"
+      >
+        <span 
+          className="event-color-dot" 
+          style={{ backgroundColor: eventColor }}
+        />
+        Delete "{event.title}" ({eventTime})
+      </button>
+    );
+  }
+
+  function getCustomEventsForDate(dateIso: string): DashboardCustomEvent[] {
+    return customEvents.filter(event => 
+      new Date(event.start_at).toISOString().split('T')[0] === dateIso
+    );
+  }
+
+  function handleDeleteEvent(eventId: string) {
+    deleteCustomEvent(eventId);
+    setContextMenu(null);
+  }
+
+  function handleCreateEvent(eventData: Parameters<typeof addCustomEvent>[0]) {
+    addCustomEvent(eventData);
+    setShowCreateModal(false);
+    setSelectedDate(null);
+  }
+
   const monthLabel = currentMonth.toLocaleDateString(undefined, {
     month: 'long',
     year: 'numeric'
@@ -366,8 +457,19 @@ export default function CalendarPage() {
                   const index = item.courseId != null
                     ? rawCourses.findIndex((course) => course.id === item.courseId)
                     : -1;
-                  const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
-                  const color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
+                  
+                  let color: string;
+                  if (item.source === 'custom') {
+                    // Use custom event color based on category
+                    color = item.context_name === 'general' ? '#64748b' :
+                            item.context_name === 'personal' ? '#059669' :
+                            item.context_name === 'study' ? '#7c3aed' :
+                            item.context_name === 'reminder' ? '#dc2626' : '#059669';
+                  } else {
+                    const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
+                    color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
+                  }
+                  
                   return (
                     <article key={item.id} className="calendar-list__item">
                       <span className="calendar-item__dot" style={{ background: color }} aria-hidden />
@@ -401,6 +503,7 @@ export default function CalendarPage() {
                 <div
                   key={day.iso}
                   className={`calendar-cell${'inCurrentMonth' in day && !day.inCurrentMonth ? ' calendar-cell--muted' : ''}${day.isToday ? ' calendar-cell--today' : ''}`}
+                  onContextMenu={(e) => handleCellRightClick(e, day.date)}
                 >
                   <div className="calendar-cell__date">{day.date.getDate()}</div>
                   <div className="calendar-cell__items">
@@ -414,8 +517,20 @@ export default function CalendarPage() {
                         const index = item.courseId != null
                           ? rawCourses.findIndex((course) => course.id === item.courseId)
                           : -1;
-                        const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
-                        const color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
+                        
+                        let color: string;
+                        if (item.source === 'custom') {
+                          // Use custom event color or default to green
+                          const customEvent = calendarItems.find(ci => ci.id === item.id);
+                          color = customEvent?.context_name === 'general' ? '#64748b' :
+                                  customEvent?.context_name === 'personal' ? '#059669' :
+                                  customEvent?.context_name === 'study' ? '#7c3aed' :
+                                  customEvent?.context_name === 'reminder' ? '#dc2626' : '#059669';
+                        } else {
+                          const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
+                          color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
+                        }
+                        
                         return (
                           <div key={item.id} className="calendar-item" title={item.title}>
                             <span className="calendar-item__dot" style={{ background: color }} aria-hidden />
@@ -433,6 +548,27 @@ export default function CalendarPage() {
             })}
           </div>
         )}
+
+        {contextMenu && (
+          <div
+            className="context-menu"
+            style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1000 }}
+          >
+            <button onClick={handleAddEvent}>Create Event</button>
+            {getCustomEventsForDate(contextMenu.date).map(renderDeleteButton)}
+          </div>
+        )}
+
+        <CreateEventPopup
+          isOpen={showCreateModal}
+          onClose={() => {
+            setShowCreateModal(false);
+            setSelectedDate(null);
+          }}
+          onSubmit={handleCreateEvent}
+          initialDate={selectedDate || undefined}
+          position={createPopupPosition}
+        />
       </div>
     </AppShell>
   );

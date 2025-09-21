@@ -45,8 +45,16 @@ export type DashboardCalendarItem = {
   start_at: string;
   context_name?: string;
   html_url?: string;
-  source: 'event' | 'assignment';
+  source: 'event' | 'assignment' | 'custom';
   courseId?: number;
+};
+
+export type CustomEvent = {
+  id: string;
+  title: string;
+  start_at: string;
+  category: 'general' | 'personal' | 'study' | 'reminder';
+  color?: string;
 };
 
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -60,6 +68,7 @@ type DashboardState = {
   upcomingAssignments: Assignment[];
   pastAssignments: Assignment[];
   calendarItems: DashboardCalendarItem[];
+  customEvents: CustomEvent[];
   featureFlags: { newDashboard: boolean };
   status: DashboardStatus;
   error: string | null;
@@ -67,9 +76,36 @@ type DashboardState = {
   setFeatureFlag: (flag: keyof DashboardState['featureFlags'], value: boolean) => void;
   courseColors: Record<number, string>;
   setCourseColor: (courseId: number, color: string) => void;
+  addCustomEvent: (event: Omit<CustomEvent, 'id'>) => void;
+  updateCustomEvent: (id: string, updates: Partial<Omit<CustomEvent, 'id'>>) => void;
+  deleteCustomEvent: (id: string) => void;
 };
 
 const progressColorCycle: CourseProgress['color'][] = ['blue', 'green', 'purple'];
+
+// Local storage utilities for custom events
+const CUSTOM_EVENTS_KEY = 'dued8-custom-events';
+
+function loadCustomEvents(): CustomEvent[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_EVENTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomEvents(events: CustomEvent[]): void {
+  try {
+    localStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(events));
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
+}
+
+function generateEventId(): string {
+  return `custom-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
 
 function inNextDays(dateString: string | null | undefined, days: number) {
   if (!dateString) return false;
@@ -91,7 +127,7 @@ function toDeadline(params: {
   courseName: string;
   dueAtIso: string;
   metadata?: Deadline['metadata'];
-  intent?: Deadline['action']['intent'];
+  intent?: 'submit' | 'view' | 'study';
 }): Deadline {
   return {
     id: params.id,
@@ -112,6 +148,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   upcomingAssignments: [],
   pastAssignments: [],
   calendarItems: [],
+  customEvents: loadCustomEvents(),
   featureFlags: { newDashboard: sharedFeatureFlags.newDashboard },
   status: 'idle',
   error: null,
@@ -130,6 +167,33 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         [courseId]: color
       }
     })),
+  addCustomEvent: (eventData) => {
+    const newEvent: CustomEvent = {
+      ...eventData,
+      id: generateEventId()
+    };
+    set((state) => {
+      const newCustomEvents = [...state.customEvents, newEvent];
+      saveCustomEvents(newCustomEvents);
+      return { customEvents: newCustomEvents };
+    });
+  },
+  updateCustomEvent: (id, updates) => {
+    set((state) => {
+      const newCustomEvents = state.customEvents.map((event) =>
+        event.id === id ? { ...event, ...updates } : event
+      );
+      saveCustomEvents(newCustomEvents);
+      return { customEvents: newCustomEvents };
+    });
+  },
+  deleteCustomEvent: (id) => {
+    set((state) => {
+      const newCustomEvents = state.customEvents.filter((event) => event.id !== id);
+      saveCustomEvents(newCustomEvents);
+      return { customEvents: newCustomEvents };
+    });
+  },
   ensureData: async ({ force = false } = {}) => {
     const { status } = get();
     if (!force && (status === 'loading' || status === 'ready')) {
@@ -140,7 +204,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     try {
       const coursesResult = await getCourses();
       if (!coursesResult.ok || !Array.isArray(coursesResult.data)) {
-        const message = coursesResult.error ?? 'Unable to load Canvas courses.';
+        const message = coursesResult.ok ? 'Unable to load Canvas courses.' : coursesResult.error;
         throw new Error(message);
       }
 
@@ -287,6 +351,20 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         });
       });
 
+      // Add custom events to calendar items
+      const { customEvents } = get();
+      customEvents.forEach((customEvent) => {
+        if (!inNextDays(customEvent.start_at, 30)) return;
+        calendarItems.push({
+          id: customEvent.id,
+          title: customEvent.title,
+          start_at: customEvent.start_at,
+          context_name: customEvent.category,
+          source: 'custom',
+          courseId: undefined
+        });
+      });
+
       deadlineCollection.sort(
         (a, b) => new Date(a.dueAtIso).getTime() - new Date(b.dueAtIso).getTime()
       );
@@ -377,7 +455,34 @@ export function usePastAssignments() {
 }
 
 export function useCalendarItems() {
-  return useDashboardStore((state) => state.calendarItems);
+  const calendarItems = useDashboardStore((state) => state.calendarItems);
+  const customEvents = useDashboardStore((state) => state.customEvents);
+  
+  // Merge custom events with calendar items for current display
+  return React.useMemo(() => {
+    const customCalendarItems: DashboardCalendarItem[] = customEvents.map((event) => ({
+      id: event.id,
+      title: event.title,
+      start_at: event.start_at,
+      context_name: event.category,
+      source: 'custom' as const,
+      courseId: undefined
+    }));
+    
+    return [...calendarItems, ...customCalendarItems];
+  }, [calendarItems, customEvents]);
+}
+
+export function useCustomEvents() {
+  return useDashboardStore((state) => state.customEvents);
+}
+
+export function useCustomEventActions() {
+  return useDashboardStore((state) => ({
+    addCustomEvent: state.addCustomEvent,
+    updateCustomEvent: state.updateCustomEvent,
+    deleteCustomEvent: state.deleteCustomEvent
+  }));
 }
 
 export function useDashboardStatus() {
