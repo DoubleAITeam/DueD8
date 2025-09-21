@@ -145,8 +145,8 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
         </div>
 
         <div className="form-actions">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" className="btn-primary">Create</button>
+          <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
+          <button type="submit" className="btn btn-primary">Create</button>
         </div>
       </form>
     </div>,

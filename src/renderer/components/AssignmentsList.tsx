@@ -24,33 +24,25 @@ export default function AssignmentsList({
     return da - db;
   });
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <ul className="assignments-list">
       {sorted.map((assignment) => (
         <li
           key={assignment.id}
-          style={{
-            padding: '14px 16px',
-            borderRadius: 14,
-            border: '1px solid var(--surface-border)',
-            background: 'rgba(255,255,255,0.75)',
-            boxShadow: '0 6px 16px rgba(15, 23, 42, 0.05)',
-            cursor: onSelect ? 'pointer' : 'default'
-          }}
-          // PHASE 2: Make each assignment interactive so users can open the upload workspace.
+          className={`assignment-item${onSelect ? ' assignment-item--clickable' : ''}`}
           onClick={onSelect ? () => onSelect(assignment) : undefined}
         >
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>{assignment.name}</div>
+          <div className="assignment-item__title">{assignment.name}</div>
           {assignment.due_at ? (
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            <div className="assignment-item__due">
               Due {new Date(assignment.due_at).toLocaleString()}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            <div className="assignment-item__due">
               {/* PHASE 1: Provide clarity when Canvas omits due dates. */}
               No due date provided – check Canvas for details.
             </div>
           )}
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+          <div className="assignment-item__course">
             {courseLookup[assignment.course_id] ? `Course: ${courseLookup[assignment.course_id]}` : 'Course unknown'}
             {assignment.html_url ? (
               <>

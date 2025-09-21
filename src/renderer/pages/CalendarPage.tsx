@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
 import CreateEventPopup from '../components/CreateEventPopup';
+import { useTheme } from '../context/ThemeContext';
 import {
   useDashboardData,
   useCalendarItems,
@@ -42,6 +43,7 @@ function toISODate(date: Date) {
 }
 
 export default function CalendarPage() {
+  const { theme } = useTheme();
   const { status } = useDashboardData();
   const rawCourses = useRawCourses();
   const calendarItems = useCalendarItems();

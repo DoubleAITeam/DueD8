@@ -6,6 +6,7 @@ import ConnectCanvas from './pages/ConnectCanvas';
 import { AppRoutes } from './routes/appRoutes';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
+import { ThemeProvider } from './context/ThemeContext';
 
 const platformBridge = getPlatformBridge();
 // PHASE 1: Load the refreshed font stack and palette for the renderer.
@@ -29,12 +30,13 @@ function Toast() {
         position: 'fixed',
         bottom: 24,
         right: 24,
-        background: '#0f172a',
-        color: '#fff',
+        background: 'var(--surface-card)',
+        color: 'var(--text-primary)',
         padding: '12px 20px',
         borderRadius: 12,
-        boxShadow: '0 12px 30px rgba(15,23,42,0.3)',
-        maxWidth: 320
+        boxShadow: 'var(--shadow-soft)',
+        maxWidth: 320,
+        border: '1px solid var(--surface-border)'
       }}
     >
       {toast}
@@ -100,8 +102,8 @@ function Root() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#0f172a',
-          color: '#e2e8f0',
+          background: 'var(--surface-background)',
+          color: 'var(--text-secondary)',
           fontSize: 18
         }}
       >
@@ -118,4 +120,8 @@ function Root() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<Root />);
+createRoot(document.getElementById('root')!).render(
+  <ThemeProvider>
+    <Root />
+  </ThemeProvider>
+);

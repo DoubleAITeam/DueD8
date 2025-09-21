@@ -27,7 +27,7 @@ const primaryNav = [
   { label: 'Classes', path: '/classes', icon: classesIcon },
   { label: 'Grades', path: '/grades', icon: GradesIcon },
   { label: 'Calendar / Events', path: '/calendar', icon: CalendarIcon },
-  { label: 'Analytics', path: '/grades/analytics', icon: BarChartIcon }
+  { label: 'Analytics', path: '/analytics', icon: BarChartIcon }
 ];
 
 const studyTools = [

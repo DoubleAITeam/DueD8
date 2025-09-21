@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useId } from 'react';
-import { LightningBoltIcon, SearchIcon, BellIcon, SettingsIcon, UserIcon } from '../icons';
+import { LightningBoltIcon, SearchIcon, BellIcon, SettingsIcon, UserIcon, MoonIcon, SunIcon } from '../icons';
 import {
   useAiTokenStore,
   useDashboardData,
@@ -10,6 +10,7 @@ import {
 } from '../../state/dashboard';
 import { useStore } from '../../state/store';
 import { useNavigate } from '../../routes/router';
+import { useTheme } from '../../context/ThemeContext';
 
 type TopbarProps = {
   onToggleSidebar: () => void;
@@ -39,6 +40,7 @@ type SearchItem = AssignmentSearchItem | CourseSearchItem;
 export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const { name } = useUser();
   const aiTokens = useAiTokenStore();
+  const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -345,6 +347,21 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
           </button>
           {menuOpen ? (
             <div className="topbar__dropdown" role="menu">
+              <button
+                type="button"
+                className="topbar__dropdown-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  toggleTheme();
+                }}
+              >
+                {theme === 'light' ? (
+                  <MoonIcon className="topbar__dropdown-icon" />
+                ) : (
+                  <SunIcon className="topbar__dropdown-icon" />
+                )}
+                {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+              </button>
               <button
                 type="button"
                 className="topbar__dropdown-item"

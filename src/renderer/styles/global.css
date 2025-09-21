@@ -2,6 +2,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
+  /* Base Colors */
   --bg: #f8fafc;
   --card: #ffffff;
   --ink: #0f172a;
@@ -13,13 +14,247 @@
   --sidebar-width: 240px;
   --border-subtle: rgba(15, 23, 42, 0.08);
   --shadow-soft: 0 20px 45px rgba(15, 23, 42, 0.08);
+  
+  /* Semantic Surface Colors */
   --surface-background: var(--bg);
   --surface-card: var(--card);
   --surface-border: var(--border-subtle);
+  
+  /* Text Colors */
   --text-primary: var(--ink);
   --text-secondary: var(--muted);
   --accent: var(--primary);
+  
+  /* Component Colors - Light Mode */
+  --button-primary-bg: #6d28d9;
+  --button-primary-text: #ffffff;
+  --button-primary-hover: #5b21b6;
+  --button-secondary-bg: rgba(109, 40, 217, 0.08);
+  --button-secondary-text: var(--primary);
+  --button-secondary-hover: rgba(109, 40, 217, 0.16);
+  
+  /* Card & Container Colors */
+  --container-bg: rgba(255, 255, 255, 0.9);
+  --container-border: var(--border-subtle);
+  --container-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  
+  /* Interactive States */
+  --hover-bg: rgba(109, 40, 217, 0.08);
+  --active-bg: rgba(109, 40, 217, 0.12);
+  --selected-bg: var(--primary);
+  --selected-text: #ffffff;
+  
+  /* Input & Form Colors */
+  --input-bg: #ffffff;
+  --input-border: var(--border-subtle);
+  --input-text: var(--ink);
+  --input-placeholder: #9ca3af;
+  --focus-ring-color: rgba(109, 40, 217, 0.2);
+  
+  /* Modal & Popup Colors */
+  --modal-bg: #ffffff;
+  --modal-border: var(--border-subtle);
+  --modal-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  
+  /* Status Colors */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
 }
+
+/* Dark mode theme */
+[data-theme="dark"] {
+  /* Base Colors */
+  --bg: #1a1a1a;
+  --card: #2a2a2a;
+  --ink: #f1f5f9;
+  --muted: #94a3b8;
+  --primary: #c4b5fd;
+  --bar-blue: #60a5fa;
+  --bar-green: #4ade80;
+  --bar-purple: #c084fc;
+  --border-subtle: rgba(241, 245, 249, 0.1);
+  --shadow-soft: 0 20px 45px rgba(0, 0, 0, 0.3);
+  
+  /* Semantic Surface Colors */
+  --surface-background: var(--bg);
+  --surface-card: var(--card);
+  --surface-border: var(--border-subtle);
+  
+  /* Text Colors */
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --accent: var(--primary);
+  
+  /* Component Colors - Dark Mode */
+  --button-primary-bg: #7c3aed;
+  --button-primary-text: #ffffff;
+  --button-primary-hover: #6d28d9;
+  --button-secondary-bg: rgba(139, 92, 246, 0.15);
+  --button-secondary-text: #c4b5fd;
+  --button-secondary-hover: rgba(139, 92, 246, 0.25);
+  
+  /* Card & Container Colors */
+  --container-bg: var(--card);
+  --container-border: var(--border-subtle);
+  --container-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+  
+  /* Interactive States */
+  --hover-bg: rgba(139, 92, 246, 0.15);
+  --active-bg: rgba(139, 92, 246, 0.25);
+  --selected-bg: #7c3aed;
+  --selected-text: #ffffff;
+  
+  /* Input & Form Colors */
+  --input-bg: #1e1e1e;
+  --input-border: rgba(241, 245, 249, 0.1);
+  --input-text: var(--ink);
+  --input-placeholder: #6b7280;
+  --focus-ring-color: rgba(139, 92, 246, 0.3);
+  
+  /* Modal & Popup Colors */
+  --modal-bg: #1e1e1e;
+  --modal-border: rgba(241, 245, 249, 0.1);
+  --modal-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  
+  /* Status Colors */
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --info: #60a5fa;
+}
+
+/* =============================================================================
+   STANDARDIZED COMPONENT CLASSES
+   Use these classes for consistent theming across all pages and components
+   ============================================================================= */
+
+/* Buttons */
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border: 1px solid var(--button-primary-bg);
+}
+
+.btn-primary:hover {
+  background: var(--button-primary-hover);
+  border-color: var(--button-primary-hover);
+}
+
+.btn-secondary {
+  background: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  border: 1px solid transparent;
+}
+
+.btn-secondary:hover {
+  background: var(--button-secondary-hover);
+}
+
+/* Cards & Containers */
+.card {
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 16px;
+  box-shadow: var(--container-shadow);
+  padding: 20px;
+}
+
+.card-sm {
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.card-lg {
+  padding: 24px;
+  border-radius: 20px;
+}
+
+/* Interactive Elements */
+.interactive {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.interactive:hover {
+  background: var(--hover-bg);
+}
+
+.interactive.active {
+  background: var(--active-bg);
+  color: var(--text-primary);
+}
+
+.interactive.selected {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+/* Form Elements */
+.form-input {
+  border: 1px solid var(--container-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--container-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.form-input:focus {
+  outline: 2px solid var(--button-primary-bg);
+  outline-offset: 2px;
+  border-color: var(--button-primary-bg);
+}
+
+/* Status Elements */
+.status-success {
+  color: var(--success);
+}
+
+.status-warning {
+  color: var(--warning);
+}
+
+.status-error {
+  color: var(--error);
+}
+
+.status-info {
+  color: var(--info);
+}
+
+/* Layout Helpers */
+.page-container {
+  background: var(--surface-background);
+  color: var(--text-primary);
+}
+
+.content-section {
+  background: var(--container-bg);
+  border: 1px solid var(--container-border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--container-shadow);
+}
+
+/* =============================================================================
+   END STANDARDIZED COMPONENT CLASSES
+   ============================================================================= */
 
 * {
   box-sizing: border-box;
@@ -76,7 +311,7 @@ a:hover {
   border-radius: 999px;
   border: 1px solid var(--surface-border);
   padding: 8px 18px;
-  background: #fff;
+  background: var(--surface-card);
   color: var(--text-primary);
   cursor: pointer;
   transition: background 0.2s ease;
@@ -360,6 +595,8 @@ a:hover {
   padding: 28px 20px;
   position: sticky;
   top: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar__sections {
@@ -453,6 +690,13 @@ a:hover {
   color: var(--primary);
 }
 
+/* Dark mode sidebar active styles */
+[data-theme="dark"] .sidebar__link--active,
+[data-theme="dark"] .sidebar__sublink--active {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+}
+
 .sidebar__submenu {
   display: flex;
   flex-direction: column;
@@ -489,6 +733,17 @@ a:hover {
 
 .token-card--warning {
   background: rgba(248, 113, 113, 0.12);
+}
+
+/* Dark mode token card styling */
+[data-theme="dark"] .token-card {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+[data-theme="dark"] .token-card--warning {
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.2);
 }
 
 .token-card__header {
@@ -534,6 +789,15 @@ a:hover {
   background: #5b21b6;
 }
 
+/* Dark mode token card button */
+[data-theme="dark"] .token-card__button {
+  background: #7c3aed;
+}
+
+[data-theme="dark"] .token-card__button:hover {
+  background: #6d28d9;
+}
+
 @media (min-width: 1024px) {
   .sidebar {
     display: block;
@@ -573,11 +837,11 @@ a:hover {
   align-items: center;
   gap: 16px;
   padding: 18px 32px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+  border-bottom: 1px solid var(--surface-border);
   position: sticky;
   top: 0;
   z-index: 25;
-  background: rgba(248, 250, 252, 0.9);
+  background: var(--surface-background);
   backdrop-filter: blur(12px);
 }
 
@@ -585,8 +849,8 @@ a:hover {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: var(--card);
+  border: 1px solid var(--surface-border);
+  background: var(--surface-card);
   display: none;
   align-items: center;
   justify-content: center;
@@ -626,8 +890,8 @@ a:hover {
   gap: 10px;
   padding: 10px 16px;
   border-radius: 16px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
   position: relative;
 }
 
@@ -642,7 +906,8 @@ a:hover {
   border: none;
   outline: none;
   font-size: 15px;
-  color: var(--ink);
+  color: var(--text-primary);
+  background: transparent;
 }
 
 .topbar__search-results {
@@ -650,10 +915,10 @@ a:hover {
   top: calc(100% + 8px);
   left: 0;
   width: 100%;
-  background: #fff;
+  background: var(--surface-card);
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-soft);
   z-index: 5;
 }
 
@@ -739,6 +1004,11 @@ a:hover {
   color: var(--primary);
 }
 
+/* Dark mode token icon */
+[data-theme="dark"] .topbar__token-icon {
+  color: #c4b5fd;
+}
+
 .icon-button {
   width: 40px;
   height: 40px;
@@ -784,14 +1054,15 @@ a:hover {
 
 .topbar__avatar-name {
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .topbar__dropdown {
   position: absolute;
   right: 0;
   top: 48px;
-  background: var(--card);
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
   border-radius: 16px;
   padding: 12px;
   box-shadow: var(--shadow-soft);
@@ -810,12 +1081,12 @@ a:hover {
   padding: 8px 10px;
   border-radius: 12px;
   cursor: pointer;
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .topbar__dropdown-item:hover {
-  background: rgba(109, 40, 217, 0.08);
-  color: var(--ink);
+  background: var(--surface-background);
+  color: var(--text-primary);
 }
 
 .topbar__dropdown-icon {
@@ -886,9 +1157,11 @@ a:hover {
 .dashboard-card__input {
   flex: 1;
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--surface-border);
   padding: 14px 18px;
   font-size: 15px;
+  background: var(--surface-card);
+  color: var(--text-primary);
 }
 
 .dashboard-card__input:focus {
@@ -907,6 +1180,16 @@ a:hover {
 
 .dashboard-card__button:hover {
   background: #5b21b6;
+}
+
+/* Dark mode dashboard button */
+[data-theme="dark"] .dashboard-card__button {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .dashboard-card__button:hover {
+  background: #6d28d9;
 }
 
 .dashboard-card__error {
@@ -935,6 +1218,16 @@ a:hover {
   background: rgba(109, 40, 217, 0.16);
 }
 
+/* Dark mode chip styling */
+[data-theme="dark"] .dashboard-chip {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+}
+
+[data-theme="dark"] .dashboard-chip:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
 .dashboard-card__actions {
   display: flex;
   flex-direction: column;
@@ -945,10 +1238,10 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--surface-border);
   border-radius: 16px;
   padding: 14px 16px;
-  background: #fff;
+  background: var(--surface-card);
   text-align: left;
   cursor: pointer;
 }
@@ -986,10 +1279,10 @@ a:hover {
   flex-direction: column;
   gap: 10px;
   align-items: flex-start;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--surface-border);
   border-radius: 16px;
   padding: 14px 16px;
-  background: #fff;
+  background: var(--surface-card);
   cursor: pointer;
 }
 
@@ -1125,6 +1418,20 @@ a:hover {
   color: #fff;
 }
 
+/* Dark mode mini-calendar styles */
+[data-theme="dark"] .mini-calendar__cell--button:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+[data-theme="dark"] .mini-calendar__cell--today {
+  border: 2px solid #8b5cf6;
+}
+
+[data-theme="dark"] .mini-calendar__cell--selected {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
 .deadlines {
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 16px;
@@ -1217,6 +1524,15 @@ a:hover {
   background: var(--bar-purple);
 }
 
+/* Dark mode deadline action buttons */
+[data-theme="dark"] .deadline__action--view {
+  background: #7c3aed;
+}
+
+[data-theme="dark"] .deadline__action--study {
+  background: #8b5cf6;
+}
+
 .deadlines__empty {
   color: var(--muted);
 }
@@ -1228,15 +1544,16 @@ a:hover {
 }
 
 .dashboard-card__recent-item {
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--surface-border);
   border-radius: 16px;
   padding: 16px;
-  background: rgba(109, 40, 217, 0.05);
+  background: var(--surface-card);
 }
 
 .dashboard-card__recent-item h4 {
   margin: 0 0 6px;
   font-size: 15px;
+  color: var(--text-primary);
 }
 
 .dashboard-card__recent-item p {
@@ -1377,6 +1694,12 @@ a:hover {
   gap: 6px;
 }
 
+/* Dark mode assignments overview metric */
+[data-theme="dark"] .assignments-overview__metric {
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
 .assignments-overview__label {
   font-size: 13px;
   color: var(--text-secondary);
@@ -1403,6 +1726,58 @@ a:hover {
   color: var(--text-primary);
 }
 
+/* Dark mode assignments filter select */
+[data-theme="dark"] .assignments-overview__filter select {
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* Assignment list styles */
+.assignments-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assignment-item {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--surface-border);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.assignment-item--clickable {
+  cursor: pointer;
+}
+
+.assignment-item__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.assignment-item__due {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.assignment-item__course {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* Dark mode assignment items */
+[data-theme="dark"] .assignment-item {
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
 .class-grid {
   display: grid;
   gap: 20px;
@@ -1418,6 +1793,13 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Dark mode class card */
+[data-theme="dark"] .class-card {
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.15);
 }
 
 .class-card__header {
@@ -1547,6 +1929,19 @@ a:hover {
   color: #4c1d95;
 }
 
+/* Dark mode class card footer button */
+[data-theme="dark"] .class-card__footer button {
+  border: 2px solid rgba(124, 58, 237, 0.6);
+  background: rgba(124, 58, 237, 0.15);
+  color: #c4b5fd;
+}
+
+[data-theme="dark"] .class-card__footer button:hover {
+  background: rgba(124, 58, 237, 0.25);
+  border-color: rgba(124, 58, 237, 0.8);
+  color: #ddd6fe;
+}
+
 .calendar-layout {
   display: grid;
   gap: 24px;
@@ -1562,7 +1957,7 @@ a:hover {
 .calendar-layout__clear {
   border-radius: 999px;
   border: 1px solid var(--surface-border);
-  background: #fff;
+  background: var(--surface-card);
   padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
@@ -1601,6 +1996,12 @@ a:hover {
   gap: 6px;
 }
 
+/* Dark mode grades overview metric */
+[data-theme="dark"] .grades-overview__metric {
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(139, 92, 246, 0.1);
+}
+
 .grades-overview__metric span {
   font-size: 13px;
   color: var(--text-secondary);
@@ -1628,6 +2029,13 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* Dark mode grades list item */
+[data-theme="dark"] .grades-list__item {
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
 }
 
 .grades-list__header h4 {
@@ -1744,7 +2152,7 @@ a:hover {
 .calendar-header__controls button {
   border-radius: 999px;
   border: 1px solid var(--surface-border);
-  background: #fff;
+  background: var(--surface-card);
   padding: 8px 14px;
   cursor: pointer;
   font-size: 14px;
@@ -1786,6 +2194,16 @@ a:hover {
   background: rgba(109, 40, 217, 0.08);
 }
 
+/* Dark mode calendar view toggles */
+[data-theme="dark"] .calendar-view-toggle--active {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .calendar-view-toggle:not(.calendar-view-toggle--active):hover {
+  background: rgba(139, 92, 246, 0.1);
+}
+
 .calendar-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1799,7 +2217,7 @@ a:hover {
   padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid var(--surface-border);
-  background: #fff;
+  background: var(--surface-card);
   cursor: pointer;
   font-size: 13px;
   color: var(--text-secondary);
@@ -1859,6 +2277,17 @@ a:hover {
 
 .calendar-cell--today {
   border: 2px solid rgba(109, 40, 217, 0.6);
+}
+
+/* Dark mode calendar cells */
+[data-theme="dark"] .calendar-cell {
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .calendar-cell--today {
+  border: 2px solid rgba(139, 92, 246, 0.7);
 }
 
 .calendar-cell__date {
@@ -1953,8 +2382,8 @@ a:hover {
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--surface-border);
-  background: #fff;
-  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-soft);
   z-index: 20;
 }
 
@@ -1993,7 +2422,7 @@ a:hover {
 .workspace__back {
   border-radius: 999px;
   border: 1px solid var(--surface-border);
-  background: #fff;
+  background: var(--surface-card);
   padding: 8px 16px;
   font-size: 13px;
   cursor: pointer;
@@ -2237,7 +2666,8 @@ a:hover {
   border-radius: 12px;
   padding: 10px 14px;
   font-size: 16px;
-  background: #fff;
+  background: var(--surface-card);
+  color: var(--text-primary);
 }
 
 .ai-writer__title-input:focus {
@@ -2611,10 +3041,11 @@ a:hover {
   font-size: 14px;
   display: flex;
   align-items: center;
+  color: var(--text-primary);
 }
 
 .context-menu button:hover {
-  background: var(--bg);
+  background: var(--surface-background);
 }
 
 .context-menu-delete {
@@ -2623,6 +3054,10 @@ a:hover {
 
 .context-menu-delete:hover {
   background: #fef2f2 !important;
+}
+
+[data-theme="dark"] .context-menu-delete:hover {
+  background: #3f1f1f !important;
 }
 
 .event-color-dot {
@@ -2636,10 +3071,10 @@ a:hover {
 
 /* Create Event Popup */
 .create-event-popup {
-  background: white;
-  border: 1px solid var(--border-subtle);
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
   border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--modal-shadow);
   width: 280px;
   max-width: 90vw;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -2663,7 +3098,7 @@ a:hover {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px 12px 20px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--modal-border);
 }
 
 .popup-header h3 {
@@ -2689,7 +3124,7 @@ a:hover {
 }
 
 .popup-close:hover {
-  background: var(--bg);
+  background: var(--hover-bg);
   color: var(--text-primary);
 }
 
@@ -2716,17 +3151,23 @@ a:hover {
 .create-event-popup .form-group input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--input-border);
   border-radius: 6px;
   font-size: 14px;
-  background: white;
+  background: var(--input-bg);
+  color: var(--input-text);
   transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.create-event-popup .form-group input::placeholder {
+  color: var(--input-placeholder);
 }
 
 .create-event-popup .form-group input:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.1);
+  border-color: var(--button-primary-bg);
+  box-shadow: 0 0 0 3px var(--focus-ring-color);
 }
 
 .datetime-input-container {
@@ -2738,8 +3179,8 @@ a:hover {
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  background: var(--primary);
-  color: white;
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
   border: none;
   border-radius: 4px;
   padding: 4px 8px;
@@ -2751,7 +3192,7 @@ a:hover {
 }
 
 .datetime-done-btn:hover {
-  background: #5b21b6;
+  background: var(--button-primary-hover);
 }
 
 .category-grid {
@@ -2765,24 +3206,26 @@ a:hover {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--button-secondary-bg);
+  border: 1px solid var(--input-border);
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .category-chip:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--button-secondary-hover);
+  border-color: var(--input-border);
+  color: var(--text-primary);
 }
 
 .category-chip.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
+  background: var(--button-primary-bg);
+  border-color: var(--button-primary-bg);
+  color: var(--button-primary-text);
 }
 
 .category-color {
@@ -2798,40 +3241,32 @@ a:hover {
   justify-content: flex-end;
 }
 
-.btn-secondary {
-  padding: 8px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
+/* Specific styling for Cancel and Create buttons in the popup only */
+.create-event-popup .form-actions .btn.btn-secondary {
+  background: rgba(139, 92, 246, 0.2) !important;
+  color: #c4b5fd !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
 }
 
-.btn-secondary:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: var(--text-primary);
+.create-event-popup .form-actions .btn.btn-secondary:hover {
+  background: rgba(139, 92, 246, 0.3) !important;
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  color: #c4b5fd !important;
 }
 
-.btn-primary {
-  padding: 8px 16px;
-  background: var(--primary);
-  border: 1px solid var(--primary);
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: white;
-  cursor: pointer;
-  transition: all 0.2s;
+.create-event-popup .form-actions .btn.btn-primary {
+  background: #7c3aed !important;
+  color: #ffffff !important;
+  border: 1px solid #7c3aed !important;
 }
 
-.btn-primary:hover {
-  background: #5b21b6;
-  border-color: #5b21b6;
+.create-event-popup .form-actions .btn.btn-primary:hover {
+  background: #6d28d9 !important;
+  border-color: #6d28d9 !important;
+  color: #ffffff !important;
 }
+
+/* Remove hardcoded button styles - use the standardized .btn classes instead */
 
 /* Create Event Modal */
 .create-event-modal {
