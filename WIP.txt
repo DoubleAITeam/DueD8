@@ -1,0 +1,17 @@
+Issues to troubleshoot:
+    -AI deliverables of the assignments have html code in them and sometimes state that they're AI generated
+    -Chatbot is still too robotic and is programmed for only specific prompts, at least initially.
+    -Chatbot is also not very educated on the students' info. (ie "what's my grade in this class?" its response would be to recommend a study guide)
+    - remove "This looks like instructions, not a student deliverable. I will not auto-complete this.
+Signals were inconclusive for a student deliverable." AND "No model names are shown—just student-friendly guidance." from Assignment Page
+
+
+Features to be added:
+    -Calendar section/page with assignment/event names under each day
+    -(PRO feature) AI Study Tools page (AI Essay Writer/Helper, Flashcards (Quizlet integration), Quiz/Practice Questions Maker)
+    -Analytics page to track progress in each class (Topics/Modules proficiency tracking)
+    -Gamification feature (badges for submitting assignments on time, maintaining certain grades/GPA, etc)
+    -Notes upload OR in-app note-taking/ (remnote??) (draw mode???); scanned and referenced by AI
+    -(PRO feature) Live transcription 
+
+
