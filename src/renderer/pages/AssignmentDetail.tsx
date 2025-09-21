@@ -53,19 +53,54 @@ function ContextList({ entries }: { entries: AssignmentContextEntry[] }) {
 
 function AttachmentsCard({
   attachments,
-  canvasLink
+  canvasLink,
+  description,
+  contextEntries
 }: {
   attachments: AttachmentLink[];
   canvasLink: string | null;
+  description?: string | null;
+  contextEntries?: AssignmentContextEntry[];
 }) {
-  if (!featureFlags.assignmentSourceLinks) {
-    return null;
-  }
+  const allowAttachments = featureFlags.assignmentSourceLinks;
+  const descriptionParagraphs = useMemo(() => extractHtmlParagraphs(description), [description]);
 
-  const primaryAttachment = attachments[0] ?? null;
-  const additionalAttachments = attachments.slice(1);
+  const contextDownloads = useMemo(() => {
+    if (!allowAttachments || !contextEntries?.length) {
+      return [] as Array<{
+        entry: AssignmentContextEntry;
+        url: string;
+        downloadName: string;
+        preview: string;
+      }>;
+    }
 
-  if (!primaryAttachment && !canvasLink) {
+    return contextEntries.map((entry, index) => {
+      const blob = new Blob([entry.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const baseName = entry.fileName ? entry.fileName.replace(/\.[^.]+$/, '') : `canvas-context-${index + 1}`;
+      const downloadName = `${safeDownloadName(baseName)}.txt`;
+      const preview = entry.content.length > 160 ? `${entry.content.slice(0, 160)}…` : entry.content;
+      return { entry, url, downloadName, preview };
+    });
+  }, [contextEntries, allowAttachments]);
+
+  useEffect(() => {
+    return () => {
+      contextDownloads.forEach((item) => URL.revokeObjectURL(item.url));
+    };
+  }, [contextDownloads]);
+
+  const primaryAttachment = allowAttachments ? attachments[0] ?? null : null;
+  const additionalAttachments = allowAttachments ? attachments.slice(1) : [];
+
+  if (
+    !primaryAttachment &&
+    !additionalAttachments.length &&
+    !descriptionParagraphs.length &&
+    !contextDownloads.length &&
+    !canvasLink
+  ) {
     return null;
   }
 
@@ -82,9 +117,9 @@ function AttachmentsCard({
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <strong>Attachments</strong>
+        <strong>Canvas materials</strong>
         <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-          Open the original files provided with this assignment.
+          Download files and review instructions imported from Canvas.
         </span>
       </div>
 
@@ -92,7 +127,7 @@ function AttachmentsCard({
         <a
           key={primaryAttachment.id}
           href={primaryAttachment.url}
-          target="_blank"
+          download={safeDownloadName(primaryAttachment.name || 'canvas-attachment')}
           rel="noreferrer"
           style={{
             display: 'flex',
@@ -125,7 +160,7 @@ function AttachmentsCard({
             <li key={attachment.id}>
               <a
                 href={attachment.url}
-                target="_blank"
+                download={safeDownloadName(attachment.name || 'canvas-attachment')}
                 rel="noreferrer"
                 style={{
                   color: 'var(--accent)',
@@ -138,6 +173,66 @@ function AttachmentsCard({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {contextDownloads.length ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            background: 'rgba(109, 40, 217, 0.06)',
+            borderRadius: 12,
+            padding: 12,
+            border: '1px solid rgba(109, 40, 217, 0.16)'
+          }}
+        >
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            Parsed Canvas attachments
+          </span>
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}
+          >
+            {contextDownloads.map(({ entry, url, downloadName, preview }) => (
+              <li key={`${entry.fileName}-${entry.uploadedAt}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <a
+                  href={url}
+                  download={downloadName}
+                  style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}
+                >
+                  Download {entry.fileName || 'Canvas attachment'}
+                </a>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{preview}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {descriptionParagraphs.length ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            color: 'var(--text-secondary)',
+            fontSize: 13,
+            lineHeight: 1.55
+          }}
+        >
+          {descriptionParagraphs.map((paragraph, index) => (
+            <p key={index} style={{ margin: 0 }}>
+              {paragraph}
+            </p>
+          ))}
+        </div>
       ) : null}
 
       {canvasLink ? (
@@ -161,6 +256,28 @@ function AttachmentsCard({
 
 function safeDownloadName(input: string) {
   return input.replace(/[^a-zA-Z0-9._-]+/g, '-');
+}
+
+function extractHtmlParagraphs(html: string | null | undefined) {
+  if (!html) return [] as string[];
+
+  let textContent = '';
+  try {
+    if (typeof DOMParser !== 'undefined') {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      textContent = doc.body?.textContent ?? '';
+    } else {
+      textContent = html;
+    }
+  } catch (error) {
+    textContent = html;
+  }
+
+  return textContent
+    .split(/\n+/)
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .filter((paragraph) => paragraph.length);
 }
 
 type Props = {
@@ -737,7 +854,12 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         </div>
       ) : null}
 
-      <AttachmentsCard attachments={attachments} canvasLink={canvasLink} />
+      <AttachmentsCard
+        attachments={attachments}
+        canvasLink={canvasLink}
+        description={assignment?.description ?? null}
+        contextEntries={instructorContexts}
+      />
 
       <div
         onDragOver={(event) => {

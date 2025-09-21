@@ -4,11 +4,12 @@ import QuickAction from '../components/ui/QuickAction';
 import CourseProgressItem from '../components/ui/CourseProgressItem';
 import MiniCalendar from '../components/ui/MiniCalendar';
 import DeadlinesList from '../components/ui/DeadlinesList';
-import { useCourses, useDeadlines, useRecentlyLaunched, useUser } from '../state/dashboard';
+import { useCourses, useDeadlines, useRecentlyLaunched, useUser, useDashboardData } from '../state/dashboard';
 import { SparklesIcon, Wand2Icon, BookOpenIcon } from '../components/icons';
 import { useNavigate } from '../routes/router';
-import { filterDeadlinesByDate } from '../utils/deadlines.js';
-import { expectedDashboardLayout } from '../utils/dashboardLayout.js';
+import { filterDeadlinesByDate } from '../utils/deadlines';
+import { expectedDashboardLayout } from '../utils/dashboardLayout';
+import { useStore } from '../state/store';
 
 const heroChips = ['Generate Guide', 'Find Assignments', 'Study Flashcards'];
 
@@ -41,12 +42,15 @@ const deadlineRoutes = {
 
 export default function DashboardNew() {
   const { name } = useUser();
+  const { status, error } = useDashboardData();
   const courses = useCourses();
   const deadlines = useDeadlines();
   const recentlyLaunched = useRecentlyLaunched();
+  const navigate = useNavigate();
+  const setView = useStore((state) => state.setView);
+
   const [prompt, setPrompt] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const navigate = useNavigate();
 
   const filteredDeadlines = useMemo(
     () => filterDeadlinesByDate(deadlines, selectedDate),
@@ -61,6 +65,8 @@ export default function DashboardNew() {
   }
 
   const layout = expectedDashboardLayout();
+  const loadingCourses = status === 'loading' && courses.length === 0;
+  const loadingRecents = status === 'loading' && recentlyLaunched.length === 0;
 
   return (
     <AppShell>
@@ -92,6 +98,11 @@ export default function DashboardNew() {
               </button>
             ))}
           </div>
+          {status === 'error' && error ? (
+            <p className="dashboard-card__error" role="status">
+              {error}
+            </p>
+          ) : null}
         </section>
         <section className="dashboard-card dashboard-card--actions" data-area="quick-actions">
           <div className="dashboard-card__header">
@@ -114,13 +125,27 @@ export default function DashboardNew() {
             <h3>Course &amp; Assignment Progress</h3>
           </div>
           <div className="dashboard-card__list">
-            {courses.map((course) => (
-              <CourseProgressItem
-                key={course.id}
-                course={course}
-                onClick={() => navigate(`/classes?course=${course.id}`)}
-              />
-            ))}
+            {loadingCourses ? (
+              <p className="dashboard-card__empty">Loading courses…</p>
+            ) : courses.length === 0 ? (
+              <p className="dashboard-card__empty">No active courses found.</p>
+            ) : (
+              courses.map((course) => (
+                <CourseProgressItem
+                  key={course.id}
+                  course={course}
+                  onClick={() => {
+                    const courseId = Number(course.id);
+                    if (Number.isFinite(courseId)) {
+                      setView({ screen: 'course', courseId });
+                      navigate('/workspace/course');
+                    } else {
+                      navigate('/classes');
+                    }
+                  }}
+                />
+              ))
+            )}
           </div>
         </section>
         <section className="dashboard-card dashboard-card--schedule" data-area="schedule">
@@ -133,6 +158,15 @@ export default function DashboardNew() {
             selectedDate={selectedDate}
             onClear={() => setSelectedDate(null)}
             onAction={(deadline) => {
+              if (deadline.metadata?.courseId && deadline.metadata?.assignmentId) {
+                setView({
+                  screen: 'assignment',
+                  courseId: deadline.metadata.courseId,
+                  assignmentId: deadline.metadata.assignmentId
+                });
+                navigate('/workspace/assignment');
+                return;
+              }
               const target = deadlineRoutes[deadline.action?.intent ?? 'view'];
               navigate(target);
             }}
@@ -146,12 +180,23 @@ export default function DashboardNew() {
             </button>
           </div>
           <div className="dashboard-card__recent-grid">
-            {recentlyLaunched.map((item) => (
-              <article key={item.id} className="dashboard-card__recent-item">
-                <h4>{item.title}</h4>
-                <p>{new Date(item.launchedAtIso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
-              </article>
-            ))}
+            {loadingRecents ? (
+              <p className="dashboard-card__empty">Loading recent work…</p>
+            ) : recentlyLaunched.length === 0 ? (
+              <p className="dashboard-card__empty">No recent activity yet.</p>
+            ) : (
+              recentlyLaunched.map((item) => (
+                <article key={item.id} className="dashboard-card__recent-item">
+                  <h4>{item.title}</h4>
+                  <p>
+                    {new Date(item.launchedAtIso).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                  </p>
+                </article>
+              ))
+            )}
           </div>
         </section>
       </div>

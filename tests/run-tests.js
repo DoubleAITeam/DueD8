@@ -1,16 +1,14 @@
 const assert = require('assert');
-const { calculateProgressPercent } = require('../src/renderer/utils/progress.js');
-const { filterDeadlinesByDate } = require('../src/renderer/utils/deadlines.js');
-const { expectedDashboardLayout } = require('../src/renderer/utils/dashboardLayout.js');
+const { calculateProgressPercent } = require('../src/renderer/utils/progress.node.cjs');
 
-function testProgressPercent() {
-  assert.strictEqual(calculateProgressPercent(5, 10), 50, 'halfway should be 50%');
-  assert.strictEqual(calculateProgressPercent(0, 10), 0, 'zero completed should be 0%');
-  assert.strictEqual(calculateProgressPercent(12, 10), 100, 'progress should clamp at 100%');
-  assert.strictEqual(calculateProgressPercent(3, 0), 0, 'invalid totals should produce 0%');
+function testProgressPercent(fn) {
+  assert.strictEqual(fn(5, 10), 50, 'halfway should be 50%');
+  assert.strictEqual(fn(0, 10), 0, 'zero completed should be 0%');
+  assert.strictEqual(fn(12, 10), 100, 'progress should clamp at 100%');
+  assert.strictEqual(fn(3, 0), 0, 'invalid totals should produce 0%');
 }
 
-function testDeadlineFilter() {
+function testDeadlineFilter(filterDeadlinesByDate) {
   const today = new Date();
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
   const deadlines = [
@@ -25,8 +23,8 @@ function testDeadlineFilter() {
   assert.strictEqual(filteredTomorrow[0].id, '2');
 }
 
-function testDashboardLayout() {
-  const spec = expectedDashboardLayout();
+function testDashboardLayout(getLayoutSpec) {
+  const spec = getLayoutSpec();
   const expected = [
     ['hero', 'quick-actions'],
     ['progress', 'schedule'],
@@ -35,11 +33,16 @@ function testDashboardLayout() {
   assert.deepStrictEqual(spec.rows, expected, 'dashboard layout rows should remain consistent');
 }
 
-function run() {
-  testProgressPercent();
-  testDeadlineFilter();
-  testDashboardLayout();
+async function run() {
+  const { filterDeadlinesByDate } = await import('../src/renderer/utils/deadlines.node.cjs');
+  const { expectedDashboardLayout } = await import('../src/renderer/utils/dashboardLayout.node.cjs');
+  testProgressPercent(calculateProgressPercent);
+  testDeadlineFilter(filterDeadlinesByDate);
+  testDashboardLayout(expectedDashboardLayout);
   console.log('All tests passed');
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

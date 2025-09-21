@@ -1,7 +1,8 @@
 export const featureFlags = {
   assignmentSourceLinks: true,
   assignmentSolveGuard: true,
-  chatFriendliness: true
+  chatFriendliness: true,
+  newDashboard: true
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
