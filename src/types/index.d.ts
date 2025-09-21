@@ -1,4 +1,12 @@
 import type { IpcResult } from '../shared/ipc';
+import type {
+  Card,
+  Deck,
+  FlashcardQuotaInfo,
+  SaveSourceAssetInput,
+  SearchCardsResult,
+  SourceAsset
+} from '../shared/flashcards';
 
 export {};
 
@@ -45,6 +53,41 @@ declare global {
           }>
         >;
       };
+      flashcards: {
+        listDecks(): Promise<IpcResult<Deck[]>>;
+        getDeck(deckId: string): Promise<IpcResult<Deck>>;
+        createDeck(payload: { title: string; scope: 'class' | 'general'; classId?: string; tags?: string[] }): Promise<IpcResult<Deck>>;
+        updateDeck(payload: {
+          deckId: string;
+          title?: string;
+          scope?: 'class' | 'general';
+          classId?: string | null;
+          tags?: string[];
+          cardIds?: string[];
+        }): Promise<IpcResult<Deck>>;
+        deleteDeck(deckId: string): Promise<IpcResult<null>>;
+        listCards(payload: { deckId: string; sort?: 'recent' | 'alphabetical' | 'studied' }): Promise<IpcResult<Card[]>>;
+        createCard(payload: { deckId: string; front: string; back: string; tags?: string[]; sourceIds?: string[] }): Promise<IpcResult<Card>>;
+        updateCard(payload: {
+          cardId: string;
+          front?: string;
+          back?: string;
+          tags?: string[];
+          sourceIds?: string[];
+          studiedCount?: number;
+          lastStudiedAt?: string | null;
+        }): Promise<IpcResult<Card>>;
+        deleteCard(cardId: string): Promise<IpcResult<null>>;
+        moveCards(payload: { cardIds: string[]; targetDeckId: string; position?: number | 'start' | 'end' }): Promise<IpcResult<Deck>>;
+        mergeDecks(payload: { sourceDeckId: string; targetDeckId: string }): Promise<IpcResult<Deck>>;
+        search(query: string): Promise<IpcResult<SearchCardsResult[]>>;
+        saveSource(payload: SaveSourceAssetInput): Promise<IpcResult<SourceAsset>>;
+        getSource(id: string): Promise<IpcResult<SourceAsset>>;
+        quota: {
+          check(userId: string): Promise<IpcResult<FlashcardQuotaInfo>>;
+          increment(userId: string, amount: number): Promise<IpcResult<FlashcardQuotaInfo>>;
+        };
+      };
     };
   }
 
@@ -54,4 +97,14 @@ declare global {
      */
     path?: string;
   }
+}
+
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.mjs?url' {
+  const src: string;
+  export default src;
 }

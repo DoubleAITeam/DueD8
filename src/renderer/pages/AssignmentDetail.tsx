@@ -811,26 +811,24 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         gap: 24
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button
-            type="button"
-            onClick={onBack}
-            style={{
-              alignSelf: 'flex-start',
-              background: 'transparent',
-              border: '1px solid var(--surface-border)',
-              borderRadius: 999,
-              padding: '8px 16px',
-              cursor: 'pointer'
-            }}
-          >
-            ← {backLabel ?? 'Back to dashboard'}
-          </button>
-          <h2 style={{ margin: 0 }}>{assignment.name}</h2>
-          <div style={{ color: 'var(--text-secondary)' }}>
-            {courseName ? `${courseName} · ` : ''}Due: {dueText}
-          </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            alignSelf: 'flex-start',
+            background: 'transparent',
+            border: '1px solid var(--surface-border)',
+            borderRadius: 999,
+            padding: '8px 16px',
+            cursor: 'pointer'
+          }}
+        >
+          ← {backLabel ?? 'Back to dashboard'}
+        </button>
+        <h2 style={{ margin: 0 }}>{assignment.name}</h2>
+        <div style={{ color: 'var(--text-secondary)' }}>
+          {courseName ? `${courseName} · ` : ''}Due: {dueText}
         </div>
       </div>
 
@@ -870,17 +868,17 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           event.preventDefault();
           setDragging(false);
         }}
-        onDrop={handleDrop}
-        style={{
-          border: `2px dashed ${dragging ? 'var(--accent)' : 'var(--surface-border)'}`,
-          borderRadius: 20,
-          padding: 32,
-          background: dragging ? 'rgba(10, 132, 255, 0.08)' : 'rgba(255,255,255,0.75)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 12,
-          textAlign: 'center',
+      onDrop={handleDrop}
+      style={{
+        border: `2px dashed ${dragging ? 'var(--accent)' : 'var(--surface-border)'}`,
+        borderRadius: 20,
+        padding: 32,
+        background: dragging ? 'rgba(109, 40, 217, 0.12)' : 'rgba(255,255,255,0.75)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 12,
+        textAlign: 'center',
           transition: 'background 0.2s ease, border 0.2s ease'
         }}
       >
@@ -899,7 +897,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
             borderRadius: 999,
             padding: '10px 22px',
             cursor: 'pointer',
-            boxShadow: '0 10px 20px rgba(10, 132, 255, 0.25)'
+            boxShadow: '0 10px 20px rgba(109, 40, 217, 0.25)'
           }}
         >
           Browse files

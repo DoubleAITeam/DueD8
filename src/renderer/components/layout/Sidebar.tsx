@@ -2,40 +2,43 @@ import React, { useState } from 'react';
 import {
   AlertCircleIcon,
   BarChartIcon,
-  BellIcon,
   BookOpenIcon,
+  BrainCircuitIcon,
+  BrainIcon,
   CalendarIcon,
+  GradesIcon,
+  PencilIcon,
   LightningBoltIcon,
   SparklesIcon,
-  UserIcon,
-  Wand2Icon
+  Wand2Icon,
+  NotebookIcon
 } from '../icons';
 import { Link, useNavigate } from '../../routes/router';
 import { calculateProgressPercent } from '../../utils/progress';
 import { useAiTokenStore } from '../../state/dashboard';
 import ProgressBar from '../ui/ProgressBar';
+import dued8Logo from '../../../assets/dued8-logos/dued8-purple-logo.png';
 
 const classesIcon = BookOpenIcon;
 
 const primaryNav = [
   { label: 'Dashboard', path: '/dashboard', icon: SparklesIcon },
   { label: 'Assignments', path: '/assignments', icon: AlertCircleIcon },
-  { label: 'Classes', path: '/classes', icon: classesIcon }
+  { label: 'Classes', path: '/classes', icon: classesIcon },
+  { label: 'Grades', path: '/grades', icon: GradesIcon },
+  { label: 'Calendar / Events', path: '/calendar', icon: CalendarIcon },
+  { label: 'Analytics', path: '/grades/analytics', icon: BarChartIcon }
 ];
 
 const studyTools = [
+  { label: 'Chatbot', path: '/chatbot', icon: BrainCircuitIcon },
   { label: 'AI Writer', path: '/study-tools/ai-writer', icon: Wand2Icon },
-  { label: 'Study Coach', path: '/study-tools/study-coach', icon: SparklesIcon },
+  { label: 'AI Notes', path: '/study-tools/notes', icon: NotebookIcon },
   { label: 'Flashcards', path: '/study-tools/flashcards', icon: BookOpenIcon },
-  { label: 'Quiz Generator', path: '/study-tools/quiz-generator', icon: LightningBoltIcon }
+  { label: 'Quiz Generator', path: '/study-tools/quiz-generator', icon: PencilIcon }
 ];
 
-const secondaryNav = [
-  { label: 'Analytics', path: '/analytics', icon: BarChartIcon },
-  { label: 'Calendar / Events', path: '/calendar', icon: CalendarIcon },
-  { label: 'Grades', path: '/grades', icon: UserIcon },
-  { label: 'Chatbot', path: '/chatbot', icon: BellIcon }
-];
+const secondaryNav: Array<{ label: string; path: string; icon: typeof BrainIcon }> = [];
 
 type SidebarProps = {
   currentPath: string;
@@ -71,69 +74,79 @@ export default function Sidebar({ currentPath, isOpen, onClose }: SidebarProps) 
       <aside className={`sidebar ${isOpen ? 'sidebar--open' : ''}`} aria-label="Main navigation">
         <div className="sidebar__inner">
           <div className="sidebar__brand">
-            <span className="sidebar__clock" aria-hidden="true" />
+            <img className="sidebar__logo" src={dued8Logo} alt="DueD8" />
             <span className="sidebar__title">DueD8</span>
           </div>
-          <div className="sidebar__section" role="navigation">
-            {primaryNav.map((item) => {
-              const ItemIcon = item.icon;
-              const active = isActivePath(currentPath, item.path);
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`sidebar__link ${active ? 'sidebar__link--active' : ''}`}
-                  onClick={onClose}
-                >
-                  <ItemIcon className="sidebar__icon" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-          <div className="sidebar__section">
-            <button
-              type="button"
-              className="sidebar__section-toggle"
-              aria-expanded={studyOpen}
-              onClick={() => setStudyOpen((value) => !value)}
-            >
-              <span>Study Tools</span>
-            </button>
-            <div className={`sidebar__submenu ${studyOpen ? '' : 'sidebar__submenu--collapsed'}`}>
-              {studyTools.map((tool) => {
-                const ToolIcon = tool.icon;
-                const active = isActivePath(currentPath, tool.path);
+          <div className="sidebar__sections">
+            <div className="sidebar__section" role="navigation">
+              {primaryNav.map((item) => {
+                const ItemIcon = item.icon;
+                const active = isActivePath(currentPath, item.path);
                 return (
                   <Link
-                    key={tool.path}
-                    to={tool.path}
-                    className={`sidebar__sublink ${active ? 'sidebar__sublink--active' : ''}`}
+                    key={item.path}
+                    to={item.path}
+                    className={`sidebar__link ${active ? 'sidebar__link--active' : ''}`}
                     onClick={onClose}
                   >
-                    <ToolIcon className="sidebar__icon" />
-                    <span>{tool.label}</span>
+                    <ItemIcon className="sidebar__icon" />
+                    <span>{item.label}</span>
                   </Link>
                 );
               })}
             </div>
-          </div>
-          <div className="sidebar__section" role="navigation">
-            {secondaryNav.map((item) => {
-              const ItemIcon = item.icon;
-              const active = isActivePath(currentPath, item.path);
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`sidebar__link ${active ? 'sidebar__link--active' : ''}`}
-                  onClick={onClose}
+            <div className="sidebar__section">
+              <button
+                type="button"
+                className="sidebar__section-toggle"
+                aria-expanded={studyOpen}
+                onClick={() => setStudyOpen((value) => !value)}
+              >
+                <span>Study Tools</span>
+                <span
+                  className={`sidebar__section-arrow ${studyOpen ? '' : 'sidebar__section-arrow--collapsed'}`}
+                  aria-hidden
                 >
-                  <ItemIcon className="sidebar__icon" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+                  ▾
+                </span>
+              </button>
+              <div className={`sidebar__submenu ${studyOpen ? '' : 'sidebar__submenu--collapsed'}`}>
+                {studyTools.map((tool) => {
+                  const ToolIcon = tool.icon;
+                  const active = isActivePath(currentPath, tool.path);
+                  return (
+                    <Link
+                      key={tool.path}
+                      to={tool.path}
+                      className={`sidebar__sublink ${active ? 'sidebar__sublink--active' : ''}`}
+                      onClick={onClose}
+                    >
+                      <ToolIcon className="sidebar__icon" />
+                      <span>{tool.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+            {secondaryNav.length > 0 ? (
+              <div className="sidebar__section" role="navigation">
+                {secondaryNav.map((item) => {
+                  const ItemIcon = item.icon;
+                  const active = isActivePath(currentPath, item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`sidebar__link ${active ? 'sidebar__link--active' : ''}`}
+                      onClick={onClose}
+                    >
+                      <ItemIcon className="sidebar__icon" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
           <div className="sidebar__footer">
             <div className={`token-card ${nearingLimit ? 'token-card--warning' : ''}`}>

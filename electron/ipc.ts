@@ -12,6 +12,24 @@ import {
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import {
+  checkFlashcardQuota,
+  createCard as createFlashcardCard,
+  createDeck as createFlashcardDeck,
+  deleteCard as deleteFlashcardCard,
+  deleteDeck as deleteFlashcardDeck,
+  getDeck as getFlashcardDeck,
+  getSourceAsset as getFlashcardSource,
+  incrementFlashcardQuotaUsage,
+  listCardsByDeck as listFlashcardCards,
+  listDecks as listFlashcardDecks,
+  mergeDecks as mergeFlashcardDecks,
+  moveCards as moveFlashcardCards,
+  saveSourceAsset as saveFlashcardSource,
+  searchCards as searchFlashcardCards,
+  updateCard as updateFlashcardCard,
+  updateDeck as updateFlashcardDeck
+} from './flashcardsService';
 
 ipcMain.handle('ping', () => 'pong');
 
@@ -19,6 +37,92 @@ const StudentSchema = z.object({
   first_name: z.string().min(1),
   last_name: z.string().min(1),
   county: z.enum(['Fairfax', 'Sci-Tech'])
+});
+
+const DeckScopeSchema = z.enum(['class', 'general']);
+
+const CreateDeckSchema = z.object({
+  title: z.string().min(1),
+  scope: DeckScopeSchema,
+  classId: z.string().min(1).optional(),
+  tags: z.array(z.string().min(1)).optional()
+});
+
+const UpdateDeckSchema = z.object({
+  deckId: z.string().min(1),
+  title: z.string().min(1).optional(),
+  scope: DeckScopeSchema.optional(),
+  classId: z.string().min(1).or(z.literal('')).or(z.null()).optional(),
+  tags: z.array(z.string().min(1)).optional(),
+  cardIds: z.array(z.string().min(1)).optional()
+});
+
+const DeleteDeckSchema = z.object({
+  deckId: z.string().min(1)
+});
+
+const ListCardsSchema = z.object({
+  deckId: z.string().min(1),
+  sort: z.enum(['recent', 'alphabetical', 'studied']).optional()
+});
+
+const CreateCardSchema = z.object({
+  deckId: z.string().min(1),
+  front: z.string().min(1),
+  back: z.string().min(1),
+  tags: z.array(z.string().min(1)).optional(),
+  sourceIds: z.array(z.string().min(1)).optional()
+});
+
+const UpdateCardSchema = z.object({
+  cardId: z.string().min(1),
+  front: z.string().min(1).optional(),
+  back: z.string().min(1).optional(),
+  tags: z.array(z.string().min(1)).optional(),
+  sourceIds: z.array(z.string().min(1)).optional(),
+  studiedCount: z.number().int().min(0).optional(),
+  lastStudiedAt: z.string().nullable().optional()
+});
+
+const DeleteCardSchema = z.object({
+  cardId: z.string().min(1)
+});
+
+const MoveCardsSchema = z.object({
+  cardIds: z.array(z.string().min(1)).min(1),
+  targetDeckId: z.string().min(1),
+  position: z.union([z.number().int().nonnegative(), z.enum(['start', 'end'])]).optional()
+});
+
+const MergeDecksSchema = z.object({
+  sourceDeckId: z.string().min(1),
+  targetDeckId: z.string().min(1)
+});
+
+const SearchCardsSchema = z.object({
+  query: z.string().min(1)
+});
+
+const SaveSourceSchema = z.object({
+  id: z.string().min(1).optional(),
+  type: z.enum(['paste', 'upload']),
+  filename: z.string().optional(),
+  mimeType: z.string().optional(),
+  textExtract: z.string().min(1),
+  createdAt: z.string().optional()
+});
+
+const GetSourceSchema = z.object({
+  id: z.string().min(1)
+});
+
+const QuotaCheckSchema = z.object({
+  userId: z.string().min(1)
+});
+
+const QuotaIncrementSchema = z.object({
+  userId: z.string().min(1),
+  amount: z.number().int().positive()
 });
 
 const success = <T>(data: T): IpcResult<T> => ({ ok: true, data });
@@ -264,6 +368,210 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle('flashcards:listDecks', async () => {
+  try {
+    const decks = listFlashcardDecks();
+    return success(decks);
+  } catch (error) {
+    mainError('flashcards:listDecks failed', (error as Error).message);
+    return failure('Failed to list decks');
+  }
+});
+
+ipcMain.handle('flashcards:getDeck', async (_event, payload) => {
+  try {
+    const { deckId } = DeleteDeckSchema.parse(payload);
+    const deck = getFlashcardDeck(deckId);
+    return success(deck);
+  } catch (error) {
+    mainError('flashcards:getDeck failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to get deck');
+  }
+});
+
+ipcMain.handle('flashcards:createDeck', async (_event, payload) => {
+  try {
+    const parsed = CreateDeckSchema.parse(payload);
+    const deck = createFlashcardDeck({
+      title: parsed.title,
+      scope: parsed.scope,
+      classId: parsed.scope === 'class' ? parsed.classId : undefined,
+      tags: parsed.tags
+    });
+    return success(deck);
+  } catch (error) {
+    mainError('flashcards:createDeck failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create deck');
+  }
+});
+
+ipcMain.handle('flashcards:updateDeck', async (_event, payload) => {
+  try {
+    const parsed = UpdateDeckSchema.parse(payload);
+    const deck = updateFlashcardDeck(parsed.deckId, {
+      title: parsed.title,
+      scope: parsed.scope,
+      classId:
+        parsed.classId === undefined
+          ? undefined
+          : parsed.classId === '' || parsed.classId === null
+            ? null
+            : parsed.classId,
+      tags: parsed.tags,
+      cardIds: parsed.cardIds
+    });
+    return success(deck);
+  } catch (error) {
+    mainError('flashcards:updateDeck failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to update deck');
+  }
+});
+
+ipcMain.handle('flashcards:deleteDeck', async (_event, payload) => {
+  try {
+    const { deckId } = DeleteDeckSchema.parse(payload);
+    deleteFlashcardDeck(deckId);
+    return success(null);
+  } catch (error) {
+    mainError('flashcards:deleteDeck failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to delete deck');
+  }
+});
+
+ipcMain.handle('flashcards:listCards', async (_event, payload) => {
+  try {
+    const parsed = ListCardsSchema.parse(payload);
+    const cards = listFlashcardCards(parsed.deckId, { sort: parsed.sort });
+    return success(cards);
+  } catch (error) {
+    mainError('flashcards:listCards failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to list cards');
+  }
+});
+
+ipcMain.handle('flashcards:createCard', async (_event, payload) => {
+  try {
+    const parsed = CreateCardSchema.parse(payload);
+    const card = createFlashcardCard({
+      deckId: parsed.deckId,
+      front: parsed.front,
+      back: parsed.back,
+      tags: parsed.tags,
+      sourceIds: parsed.sourceIds
+    });
+    return success(card);
+  } catch (error) {
+    mainError('flashcards:createCard failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to create card');
+  }
+});
+
+ipcMain.handle('flashcards:updateCard', async (_event, payload) => {
+  try {
+    const parsed = UpdateCardSchema.parse(payload);
+    const card = updateFlashcardCard(parsed.cardId, {
+      front: parsed.front,
+      back: parsed.back,
+      tags: parsed.tags,
+      sourceIds: parsed.sourceIds,
+      studiedCount: parsed.studiedCount,
+      lastStudiedAt: parsed.lastStudiedAt ?? undefined
+    });
+    return success(card);
+  } catch (error) {
+    mainError('flashcards:updateCard failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to update card');
+  }
+});
+
+ipcMain.handle('flashcards:deleteCard', async (_event, payload) => {
+  try {
+    const { cardId } = DeleteCardSchema.parse(payload);
+    deleteFlashcardCard(cardId);
+    return success(null);
+  } catch (error) {
+    mainError('flashcards:deleteCard failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to delete card');
+  }
+});
+
+ipcMain.handle('flashcards:moveCards', async (_event, payload) => {
+  try {
+    const parsed = MoveCardsSchema.parse(payload);
+    const deck = moveFlashcardCards(parsed);
+    return success(deck);
+  } catch (error) {
+    mainError('flashcards:moveCards failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to move cards');
+  }
+});
+
+ipcMain.handle('flashcards:mergeDecks', async (_event, payload) => {
+  try {
+    const parsed = MergeDecksSchema.parse(payload);
+    const deck = mergeFlashcardDecks(parsed);
+    return success(deck);
+  } catch (error) {
+    mainError('flashcards:mergeDecks failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to merge decks');
+  }
+});
+
+ipcMain.handle('flashcards:search', async (_event, payload) => {
+  try {
+    const parsed = SearchCardsSchema.parse(payload);
+    const results = searchFlashcardCards(parsed.query);
+    return success(results);
+  } catch (error) {
+    mainError('flashcards:search failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to search cards');
+  }
+});
+
+ipcMain.handle('flashcards:saveSource', async (_event, payload) => {
+  try {
+    const parsed = SaveSourceSchema.parse(payload);
+    const asset = saveFlashcardSource(parsed);
+    return success(asset);
+  } catch (error) {
+    mainError('flashcards:saveSource failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to save source');
+  }
+});
+
+ipcMain.handle('flashcards:getSource', async (_event, payload) => {
+  try {
+    const parsed = GetSourceSchema.parse(payload);
+    const asset = getFlashcardSource(parsed.id);
+    return success(asset);
+  } catch (error) {
+    mainError('flashcards:getSource failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to load source');
+  }
+});
+
+ipcMain.handle('flashcards:quota:check', async (_event, payload) => {
+  try {
+    const { userId } = QuotaCheckSchema.parse(payload);
+    const quota = checkFlashcardQuota(userId);
+    return success(quota);
+  } catch (error) {
+    mainError('flashcards:quota:check failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to check quota');
+  }
+});
+
+ipcMain.handle('flashcards:quota:increment', async (_event, payload) => {
+  try {
+    const parsed = QuotaIncrementSchema.parse(payload);
+    const quota = incrementFlashcardQuotaUsage(parsed);
+    return success(quota);
+  } catch (error) {
+    mainError('flashcards:quota:increment failed', (error as Error).message);
+    return failure((error as Error).message || 'Failed to update quota');
+  }
+});
 
 ipcMain.handle('students.add', (_e, payload) => {
   const s = StudentSchema.parse(payload);

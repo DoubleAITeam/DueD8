@@ -1,7 +1,12 @@
 // state/store.ts
 import { create } from 'zustand';
 
-export type Profile = { name?: string; primary_email?: string };
+export type Profile = {
+  name?: string;
+  primary_email?: string;
+  plan?: 'free' | 'premium';
+  isPremium?: boolean;
+};
 
 // PHASE 2: Track the active screen so uploads can open a dedicated assignment view.
 export type ViewState =

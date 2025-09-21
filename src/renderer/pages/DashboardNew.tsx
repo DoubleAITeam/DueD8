@@ -5,7 +5,7 @@ import CourseProgressItem from '../components/ui/CourseProgressItem';
 import MiniCalendar from '../components/ui/MiniCalendar';
 import DeadlinesList from '../components/ui/DeadlinesList';
 import { useCourses, useDeadlines, useRecentlyLaunched, useUser, useDashboardData } from '../state/dashboard';
-import { SparklesIcon, Wand2Icon, BookOpenIcon } from '../components/icons';
+import { SparklesIcon, BookOpenIcon } from '../components/icons';
 import { useNavigate } from '../routes/router';
 import { filterDeadlinesByDate } from '../utils/deadlines';
 import { expectedDashboardLayout } from '../utils/dashboardLayout';
@@ -21,12 +21,6 @@ const quickActions = [
     icon: SparklesIcon
   },
   {
-    title: 'Study Guide',
-    description: 'Build personalised outlines',
-    path: '/study-tools/study-coach',
-    icon: Wand2Icon
-  },
-  {
     title: 'Practice Quiz',
     description: 'Check your understanding',
     path: '/study-tools/quiz-generator',
@@ -37,7 +31,7 @@ const quickActions = [
 const deadlineRoutes = {
   submit: '/assignments/submit',
   view: '/assignments',
-  study: '/study-tools/study-coach'
+  study: '/study-tools/ai-writer'
 } as const;
 
 export default function DashboardNew() {
@@ -61,7 +55,7 @@ export default function DashboardNew() {
     event.preventDefault();
     const trimmed = prompt.trim();
     if (!trimmed) return;
-    navigate(`/study-tools/study-coach?q=${encodeURIComponent(trimmed)}`);
+    navigate('/study-tools/ai-writer');
   }
 
   const layout = expectedDashboardLayout();
@@ -83,7 +77,7 @@ export default function DashboardNew() {
               aria-label="Describe what you need help with"
             />
             <button type="submit" className="dashboard-card__button">
-              Ask Study Coach
+              Open AI Writer
             </button>
           </form>
           <div className="dashboard-card__chips" role="group" aria-label="Quick prompt suggestions">

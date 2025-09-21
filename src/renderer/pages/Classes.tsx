@@ -75,11 +75,16 @@ export default function ClassesPage() {
                       </button>
                     </footer>
                     <div className="class-card__body">
-                      <div className="class-card__metric">
+                      <div className="class-card__list">
                         <span>Assignments completed</span>
-                        <strong>
-                          {progress ? `${progress.completedAssignments}/${progress.totalAssignments}` : '—'}
-                        </strong>
+                        {progress ? (
+                          <div className="class-card__list-row">
+                            <span className="class-card__list-fraction">{`${progress.completedAssignments}/${progress.totalAssignments}`}</span>
+                            <strong className="class-card__list-complete">complete</strong>
+                          </div>
+                        ) : (
+                          <p>No assignment data yet.</p>
+                        )}
                       </div>
                       <div className="class-card__upcoming">
                         <span>Upcoming assignments</span>

@@ -116,5 +116,66 @@ export const LightningBoltIcon = createIcon(
   </>
 );
 
+export const NotebookIcon = createIcon(
+  <>
+    <rect x="7" y="3" width="12" height="18" rx="2" />
+    <path d="M9 3v18" />
+    <path d="M7 7H5" />
+    <path d="M7 12H5" />
+    <path d="M7 17H5" />
+    <path d="M11 9h6" />
+    <path d="M11 13h4" />
+    <path d="M11 17h3" />
+  </>
+);
+
+export const BrainIcon = createIcon(
+  <>
+    <path d="M7 14C5.343 14 4 15.343 4 17s1.343 3 3 3c.3506 0 .6872-.0602 1-.1707" />
+    <path d="M4.2639 15.6046C2.9243 14.9582 2 13.587 2 12c0-1.2117.5388-2.2975 1.3898-3.031" />
+    <path d="M3.4205 8.8882C3.1549 8.4911 3 8.0136 3 7.5 3 6.1193 4.1193 5 5.5 5c.5629 0 1.0824.186 1.5002.5" />
+    <path d="M7.2377 5.5653C7.0852 5.2421 7 4.881 7 4.5 7 3.1193 8.1193 2 9.5 2 10.8807 2 12 3.1193 12 4.5V20" />
+    <path d="M8 20c0 1.1046.8954 2 2 2s2-.8954 2-2" />
+    <path d="M12 5.5c2.4 0 4.5 2 4.5 4.4 0 .9-.3 1.8-.8 2.5" />
+    <path d="M15.7 12.4C17.1 13.1 18 14.5 18 16c0 2.2-1.8 4-4 4h-2" />
+    <path d="M12.4 10h1.1a2 2 0 0 1 0 4h-.7" />
+  </>
+);
+
+export const BrainCircuitIcon = createIcon(
+  <>
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+    <path d="M9 13a4.5 4.5 0 0 0 3-4" />
+    <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+    <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+    <path d="M6 18a4 4 0 0 1-1.967-.516" />
+    <path d="M12 13h4" />
+    <path d="M12 18h6a2 2 0 0 1 2 2v1" />
+    <path d="M12 8h8" />
+    <path d="M16 8V5a2 2 0 0 1 2-2" />
+    <circle cx="16" cy="13" r="1" />
+    <circle cx="18" cy="3" r="1" />
+    <circle cx="20" cy="21" r="1" />
+    <circle cx="20" cy="8" r="1" />
+  </>
+);
+
+export const PencilIcon = createIcon(
+  <>
+    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497Z" />
+    <path d="m15 5 4 4" />
+  </>
+);
+
+export const GradesIcon = createIcon(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.75 16 12 7l3.25 9" />
+    <path d="M10.25 12.25h3.5" />
+    <path d="M16.5 10.25h3" />
+    <path d="M18 8.75v3" />
+  </>
+);
+
 export const BookIcon = BookOpenIcon;
 export type IconComponent = React.ComponentType<IconProps>;

@@ -104,11 +104,17 @@ export default function GradesPage() {
                     </div>
                     <div>
                       <span className="grades-list__label">Assignments complete</span>
-                      <strong>
-                        {courseProgress
-                          ? `${courseProgress.completedAssignments}/${courseProgress.totalAssignments}`
-                          : '—'}
-                      </strong>
+                      <div className="grades-list__value">
+                        {courseProgress ? (
+                          <>
+                            <span>{courseProgress.completedAssignments}</span>
+                            <span className="grades-list__value-divider">/</span>
+                            <span>{courseProgress.totalAssignments}</span>
+                          </>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {course.syllabus_body ? (

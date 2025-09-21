@@ -8,6 +8,8 @@ import GradesPage from '../pages/Grades';
 import AssignmentWorkspace from '../pages/AssignmentWorkspace';
 import CourseWorkspace from '../pages/CourseWorkspace';
 import Placeholder from '../pages/Placeholder';
+import AiWriter from '../pages/AiWriter';
+import NoteLibrary from '../pages/NoteLibrary';
 import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
 
@@ -25,14 +27,15 @@ export function AppRoutes() {
       { path: '/assignments', element: <AssignmentsPage /> },
       { path: '/assignments/submit', element: placeholder('Submit Assignment') },
       { path: '/classes', element: <ClassesPage /> },
-      { path: '/study-tools', element: placeholder('Study Tools') },
-      { path: '/study-tools/ai-writer', element: placeholder('AI Writer') },
-      { path: '/study-tools/study-coach', element: placeholder('Study Coach') },
+      { path: '/study-tools', element: <Navigate to="/study-tools/ai-writer" replace /> },
+      { path: '/study-tools/ai-writer', element: <AiWriter /> },
+      { path: '/study-tools/notes', element: <NoteLibrary /> },
       { path: '/study-tools/flashcards', element: placeholder('Flashcards') },
       { path: '/study-tools/quiz-generator', element: placeholder('Quiz Generator') },
-      { path: '/analytics', element: placeholder('Analytics') },
-      { path: '/calendar', element: <CalendarPage /> },
       { path: '/grades', element: <GradesPage /> },
+      { path: '/grades/analytics', element: placeholder('Analytics') },
+      { path: '/analytics', element: <Navigate to="/grades/analytics" replace /> },
+      { path: '/calendar', element: <CalendarPage /> },
       { path: '/workspace/assignment', element: <AssignmentWorkspace /> },
       { path: '/workspace/course', element: <CourseWorkspace /> },
       { path: '/chatbot', element: placeholder('Chatbot') },
