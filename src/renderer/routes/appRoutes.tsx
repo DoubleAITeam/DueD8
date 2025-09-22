@@ -10,6 +10,7 @@ import CourseWorkspace from '../pages/CourseWorkspace';
 import Placeholder from '../pages/Placeholder';
 import AiWriter from '../pages/AiWriter';
 import NoteLibrary from '../pages/NoteLibrary';
+import ChatbotPage from '../pages/ChatbotPage';
 import SettingsPage from '../pages/Settings';
 import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
@@ -39,7 +40,7 @@ export function AppRoutes() {
       { path: '/calendar', element: <CalendarPage /> },
       { path: '/workspace/assignment', element: <AssignmentWorkspace /> },
       { path: '/workspace/course', element: <CourseWorkspace /> },
-      { path: '/chatbot', element: placeholder('Chatbot') },
+      { path: '/chatbot', element: <ChatbotPage /> },
       { path: '/pricing', element: placeholder('Upgrade Plan') },
       { path: '/settings', element: <SettingsPage /> },
       { path: '/logout', element: placeholder('Logout') },

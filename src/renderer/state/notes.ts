@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type NoteContentType = 'text' | 'image' | 'audio';
+export type NoteContentType = 'text' | 'image' | 'audio' | 'youtube';
 
 export type NoteRecord = {
   id: string;

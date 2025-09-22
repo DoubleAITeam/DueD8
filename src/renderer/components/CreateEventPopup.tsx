@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { CustomEvent } from '../state/dashboard';
+import { coursePalette } from '../utils/colors';
 
 type CalendarOption = {
   id: string;
@@ -15,18 +16,22 @@ interface CreateEventPopupProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (event: Omit<CustomEvent, 'id'>) => void;
+  onCreateCalendar?: (calendar: { name: string; color: string }) => void;
   initialDate?: string;
   position: { x: number; y: number };
   calendarOptions: CalendarOption[];
 }
 
-export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDate, position, calendarOptions }: CreateEventPopupProps) {
+export default function CreateEventPopup({ isOpen, onClose, onSubmit, onCreateCalendar, initialDate, position, calendarOptions }: CreateEventPopupProps) {
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState(initialDate || new Date().toISOString().slice(0, 16));
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [location, setLocation] = useState('');
   const [link, setLink] = useState('');
   const [isDateTimePickerOpen, setIsDateTimePickerOpen] = useState(false);
+  const [showCreateCalendar, setShowCreateCalendar] = useState(false);
+  const [newCalendarName, setNewCalendarName] = useState('');
+  const [newCalendarColor, setNewCalendarColor] = useState('#64748b');
   const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,6 +65,9 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
     setLocation('');
     setLink('');
     setStartAt(initialDate || new Date().toISOString().slice(0, 16));
+    setShowCreateCalendar(false);
+    setNewCalendarName('');
+    setNewCalendarColor('#64748b');
     setSelectedCalendarId((current) => {
       if (current && calendarOptions.some((option) => option.id === current)) {
         return current;
@@ -71,6 +79,22 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
   if (!isOpen) return null;
 
   const selectedCalendar = calendarOptions.find((option) => option.id === selectedCalendarId);
+
+  const handleCreateCalendar = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCalendarName.trim() || !onCreateCalendar) return;
+    
+    const newCalendar = onCreateCalendar({
+      name: newCalendarName.trim(),
+      color: newCalendarColor
+    });
+    
+    // Select the newly created calendar
+    setSelectedCalendarId(newCalendar.id);
+    setShowCreateCalendar(false);
+    setNewCalendarName('');
+    setNewCalendarColor('#64748b');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +195,62 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
             ) : (
               <p className="category-empty">Create a calendar to add events.</p>
             )}
+            {onCreateCalendar && (
+              <button
+                type="button"
+                className="category-chip category-chip--create"
+                onClick={() => setShowCreateCalendar(true)}
+              >
+                <span className="category-color category-color--add">+</span>
+                Create New Calendar
+              </button>
+            )}
           </div>
+          
+          {showCreateCalendar && onCreateCalendar && (
+            <div className="create-calendar-form">
+              <form onSubmit={handleCreateCalendar}>
+                <div className="form-group">
+                  <label>Calendar Name</label>
+                  <input
+                    type="text"
+                    value={newCalendarName}
+                    onChange={(e) => setNewCalendarName(e.target.value)}
+                    placeholder="Enter calendar name"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Color</label>
+                  <div className="color-palette">
+                    {coursePalette.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`color-option ${newCalendarColor === color ? 'active' : ''}`}
+                        style={{ background: color }}
+                        onClick={() => setNewCalendarColor(color)}
+                        aria-label={`Select ${color} color`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowCreateCalendar(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary">
+                    Create Calendar
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
 
         <div className="form-group">

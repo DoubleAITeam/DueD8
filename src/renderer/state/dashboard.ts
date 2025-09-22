@@ -93,6 +93,7 @@ type DashboardState = {
   deleteCustomEvent: (id: string) => void;
   addCustomCalendar: (calendar: Omit<CustomCalendar, 'id'>) => CustomCalendar;
   updateCustomCalendar: (id: string, updates: Partial<Omit<CustomCalendar, 'id'>>) => void;
+  deleteCustomCalendar: (id: string) => void;
 };
 
 const progressColorCycle: CourseProgress['color'][] = ['blue', 'green', 'purple'];
@@ -338,6 +339,22 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       );
       saveCustomCalendars(customCalendars);
       return { customCalendars };
+    });
+  },
+  deleteCustomCalendar: (id) => {
+    set((state) => {
+      // Don't allow deleting default calendars
+      if (id.startsWith('default-')) return state;
+      
+      // Remove the calendar
+      const customCalendars = state.customCalendars.filter((calendar) => calendar.id !== id);
+      saveCustomCalendars(customCalendars);
+      
+      // Remove all events associated with this calendar
+      const customEvents = state.customEvents.filter((event) => event.customCalendarId !== id);
+      saveCustomEvents(customEvents);
+      
+      return { customCalendars, customEvents };
     });
   },
   ensureData: async ({ force = false } = {}) => {
@@ -685,7 +702,8 @@ export function useCustomCalendars() {
 export function useCustomCalendarActions() {
   return useDashboardStore((state) => ({
     addCustomCalendar: state.addCustomCalendar,
-    updateCustomCalendar: state.updateCustomCalendar
+    updateCustomCalendar: state.updateCustomCalendar,
+    deleteCustomCalendar: state.deleteCustomCalendar
   }));
 }
 

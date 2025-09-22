@@ -27,6 +27,11 @@ const INPUT_MODES = [
     id: 'audio' as const,
     label: 'Audio (Premium)',
     hint: 'Transcribe lectures and auto-highlight the important pieces.'
+  },
+  {
+    id: 'youtube' as const,
+    label: 'YouTube (Premium)',
+    hint: 'Paste YouTube links to extract transcriptions and create notes automatically.'
   }
 ];
 
@@ -357,6 +362,8 @@ function contentLabel(type: NoteContentType): string {
       return 'Image upload';
     case 'audio':
       return 'Audio upload';
+    case 'youtube':
+      return 'YouTube video';
     default:
       return 'Note';
   }
@@ -399,6 +406,7 @@ export default function NoteLibrary() {
   const [textInput, setTextInput] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [draftNotes, setDraftNotes] = useState<string[]>([]);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftAnalysis, setDraftAnalysis] = useState<DraftAnalysis | null>(null);
@@ -463,6 +471,9 @@ export default function NoteLibrary() {
     }
     if (!nextMode || nextMode !== 'audio') {
       setAudioFile(null);
+    }
+    if (!nextMode || nextMode !== 'youtube') {
+      setYoutubeUrl('');
     }
   }
 
@@ -554,7 +565,7 @@ export default function NoteLibrary() {
             fileName: imageFile.name
           }
         };
-      } else {
+      } else if (mode === 'audio') {
         if (!audioFile) {
           setError('Select an audio file to transcribe.');
           return;
@@ -608,6 +619,65 @@ export default function NoteLibrary() {
           metadata: {
             source: 'audio',
             fileName: audioFile.name,
+            segmentCount: transcription.segments.length
+          }
+        };
+      } else if (mode === 'youtube') {
+        if (!youtubeUrl.trim()) {
+          setError('Enter a YouTube URL to transcribe.');
+          return;
+        }
+        if (!isPremium) {
+          setShowUpgrade(true);
+          return;
+        }
+        const transcription = await simulateYoutubeTranscription(youtubeUrl.trim());
+        const { blocks, analysis } = buildBlocksFromText(transcription.transcript);
+        const mergedBlocks = transcription.segments.length
+          ? transcription.segments.map((segment) => `${segment.topic}: ${segment.summary}`)
+          : blocks;
+        const mergedAnalysis: DraftAnalysis = {
+          keyTakeaways: transcription.keyTakeaways.length
+            ? transcription.keyTakeaways
+            : analysis.keyTakeaways,
+          topics: transcription.segments.length
+            ? transcription.segments.map((segment) => ({ heading: segment.topic, detail: segment.summary }))
+            : analysis.topics,
+          numbers: Array.from(new Set([...transcription.numbers, ...analysis.numbers])),
+          rawText: transcription.transcript,
+          transcript: transcription.transcript,
+          suggestedTitle: analysis.suggestedTitle
+        };
+        if (mergedBlocks.length === 0) {
+          setError('YouTube transcription succeeded but no clear topics were detected.');
+          return;
+        }
+        setDraftNotes(mergedBlocks);
+        setDraftAnalysis(mergedAnalysis);
+        setDraftSource({
+          type: 'youtube',
+          rawInputLink: youtubeUrl.trim(),
+          sourceName: transcription.videoTitle,
+          transcript: transcription.transcript
+        });
+        setDraftTitle(mergedAnalysis.suggestedTitle ?? transcription.videoTitle);
+        const transcriptionTokens = estimateTokensFromText(transcription.transcript) + 400;
+        const recapTokens = estimateTokensFromTexts([
+          mergedBlocks.join('\n'),
+          mergedAnalysis.keyTakeaways.join(' ')
+        ]);
+        pendingTask = {
+          label: 'Transcribe & organise YouTube video',
+          category: 'transcribe',
+          steps: [
+            { label: 'Extract YouTube transcript', tokenEstimate: transcriptionTokens },
+            { label: 'Outline recap', tokenEstimate: recapTokens }
+          ],
+          metadata: {
+            source: 'youtube',
+            videoId: transcription.videoId,
+            videoTitle: transcription.videoTitle,
+            channelName: transcription.channelName,
             segmentCount: transcription.segments.length
           }
         };
@@ -722,8 +792,37 @@ export default function NoteLibrary() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (index > 0) {
+                      const updated = [...draftNotes];
+                      [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+                      setDraftNotes(updated);
+                    }
+                  }}
+                  disabled={index === 0}
+                  title="Move up"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (index < draftNotes.length - 1) {
+                      const updated = [...draftNotes];
+                      [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+                      setDraftNotes(updated);
+                    }
+                  }}
+                  disabled={index === draftNotes.length - 1}
+                  title="Move down"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setDraftNotes(draftNotes.filter((_, idx) => idx !== index));
                   }}
+                  title="Remove block"
                 >
                   Remove block
                 </button>
@@ -936,6 +1035,31 @@ export default function NoteLibrary() {
                 {!isPremium ? (
                   <p className="note-library__premium-hint">
                     Audio uploads are a premium feature. Upgrade to unlock lecture transcriptions.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {mode === 'youtube' ? (
+              <div className="note-library__field">
+                <label htmlFor="note-youtube-input">Paste a YouTube link</label>
+                <input
+                  id="note-youtube-input"
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={youtubeUrl}
+                  onChange={(event) => {
+                    const url = event.target.value;
+                    if (url && !isPremium) {
+                      setShowUpgrade(true);
+                      return;
+                    }
+                    setYoutubeUrl(url);
+                  }}
+                />
+                {youtubeUrl ? <p className="note-library__file">YouTube URL: {youtubeUrl}</p> : null}
+                {!isPremium ? (
+                  <p className="note-library__premium-hint">
+                    YouTube transcription is a premium feature. Upgrade to unlock video note generation.
                   </p>
                 ) : null}
               </div>

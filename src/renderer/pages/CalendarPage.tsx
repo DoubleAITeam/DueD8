@@ -72,11 +72,12 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [createPopupPosition, setCreatePopupPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [deleteConfirmCalendar, setDeleteConfirmCalendar] = useState<CustomCalendar | null>(null);
   const initializedFilters = useRef(false);
   const courseColors = useCourseColors();
   const setCourseColor = useSetCourseColor();
   const { addCustomEvent, deleteCustomEvent } = useCustomEventActions();
-  const { addCustomCalendar, updateCustomCalendar } = useCustomCalendarActions();
+  const { addCustomCalendar, updateCustomCalendar, deleteCustomCalendar } = useCustomCalendarActions();
 
   const customCalendarMap = useMemo(
     () => new Map(customCalendars.map((calendar) => [calendar.id, calendar])),
@@ -412,6 +413,22 @@ export default function CalendarPage() {
     setSelectedDate(null);
   }
 
+  function handleDeleteCalendar(calendar: CustomCalendar) {
+    setDeleteConfirmCalendar(calendar);
+  }
+
+  function confirmDeleteCalendar() {
+    if (!deleteConfirmCalendar) return;
+    
+    deleteCustomCalendar(deleteConfirmCalendar.id);
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      next.delete(`custom-${deleteConfirmCalendar.id}`);
+      return Array.from(next);
+    });
+    setDeleteConfirmCalendar(null);
+  }
+
   const monthLabel = currentMonth.toLocaleDateString(undefined, {
     month: 'long',
     year: 'numeric'
@@ -436,6 +453,17 @@ export default function CalendarPage() {
             </button>
           </div>
           <div className="calendar-header__view">
+            <button
+              type="button"
+              className="btn btn-primary calendar-header__new-event"
+              onClick={() => {
+                setSelectedDate(null);
+                setCreatePopupPosition({ x: window.innerWidth / 2 - 150, y: 100 });
+                setShowCreateModal(true);
+              }}
+            >
+              + New Event
+            </button>
             <button
               type="button"
               className={`calendar-view-toggle${mode === 'list' ? ' calendar-view-toggle--active' : ''}`}
@@ -481,53 +509,72 @@ export default function CalendarPage() {
                 const dotColor = option.color || '#64748b';
 
                 return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`calendar-filter ${active ? 'calendar-filter--active' : ''}`}
-                    onClick={() => handleToggleFilter(option.id)}
-                    aria-pressed={active}
-                  >
-                    <span
-                      className="calendar-filter__dot"
-                      style={{ background: dotColor }}
-                      aria-hidden
-                      onClick={(event) => {
-                        if (!isCourseOption && !isCustomCalendarOption) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setColorMenu((current) => (current === option.id ? null : option.id));
-                      }}
-                    />
-                    <span>{option.label}</span>
-                    {(isCourseOption || isCustomCalendarOption) && colorMenu === option.id ? (
-                      <div className="calendar-color-picker" onClick={(event) => event.stopPropagation()}>
-                        {coursePalette.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            className={`calendar-color-picker__color${
-                              (isCourseOption
-                                ? (courseColors[option.courseId!] ?? '')
-                                : customCalendarMap.get(option.customCalendarId!)?.color ?? '') === color
-                                ? ' calendar-color-picker__color--active'
-                                : ''
-                            }`}
-                            style={{ background: color }}
-                            onClick={() => {
-                              if (isCourseOption) {
-                                setCourseColor(option.courseId!, color);
-                              } else if (isCustomCalendarOption) {
-                                updateCustomCalendar(option.customCalendarId!, { color });
-                              }
-                              setColorMenu(null);
-                            }}
-                            aria-label={`Set ${option.label} calendar color`}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                  </button>
+                  <div key={option.id} className="calendar-filter-container">
+                    <button
+                      type="button"
+                      className={`calendar-filter ${active ? 'calendar-filter--active' : ''}`}
+                      onClick={() => handleToggleFilter(option.id)}
+                      aria-pressed={active}
+                    >
+                      <span
+                        className="calendar-filter__dot"
+                        style={{ background: dotColor }}
+                        aria-hidden
+                        onClick={(event) => {
+                          if (!isCourseOption && !isCustomCalendarOption) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setColorMenu((current) => (current === option.id ? null : option.id));
+                        }}
+                      />
+                      <span>{option.label}</span>
+                      {(isCourseOption || isCustomCalendarOption) && colorMenu === option.id ? (
+                        <div className="calendar-color-picker" onClick={(event) => event.stopPropagation()}>
+                          {coursePalette.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              className={`calendar-color-picker__color${
+                                (isCourseOption
+                                  ? (courseColors[option.courseId!] ?? '')
+                                  : customCalendarMap.get(option.customCalendarId!)?.color ?? '') === color
+                                  ? ' calendar-color-picker__color--active'
+                                  : ''
+                              }`}
+                              style={{ background: color }}
+                              onClick={() => {
+                                if (isCourseOption) {
+                                  setCourseColor(option.courseId!, color);
+                                } else if (isCustomCalendarOption) {
+                                  updateCustomCalendar(option.customCalendarId!, { color });
+                                }
+                                setColorMenu(null);
+                              }}
+                              aria-label={`Set ${option.label} calendar color`}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </button>
+                    {isCustomCalendarOption && option.customCalendarId && !option.customCalendarId.startsWith('default-') && (
+                      <button
+                        type="button"
+                        className="calendar-filter__delete"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const calendar = customCalendarMap.get(option.customCalendarId!);
+                          if (calendar) {
+                            handleDeleteCalendar(calendar);
+                          }
+                        }}
+                        aria-label={`Delete ${option.label} calendar`}
+                        title={`Delete ${option.label} calendar`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -654,6 +701,15 @@ export default function CalendarPage() {
             setSelectedDate(null);
           }}
           onSubmit={handleCreateEvent}
+          onCreateCalendar={(data) => {
+            const created = addCustomCalendar(data);
+            setActiveFilters((prev) => {
+              const next = new Set(prev);
+              next.add(`custom-${created.id}`);
+              return Array.from(next);
+            });
+            return created;
+          }}
           initialDate={selectedDate || undefined}
           position={createPopupPosition}
           calendarOptions={eventCalendarOptions}
@@ -672,6 +728,37 @@ export default function CalendarPage() {
             });
           }}
         />
+
+        {deleteConfirmCalendar && (
+          <div className="calendar-modal__backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteConfirmCalendar(null)}>
+            <div
+              className="calendar-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3>Delete Calendar</h3>
+              <p>
+                Are you sure you want to delete the calendar "{deleteConfirmCalendar.name}"? 
+                This will also delete all events in this calendar and cannot be undone.
+              </p>
+              <div className="calendar-modal__actions">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setDeleteConfirmCalendar(null)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-danger" 
+                  onClick={confirmDeleteCalendar}
+                >
+                  Delete Calendar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

@@ -197,5 +197,68 @@ export const SunIcon = createIcon(
   </>
 );
 
+export const PlusIcon = createIcon(
+  <>
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </>
+);
+
+export const TrashIcon = createIcon(
+  <>
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+  </>
+);
+
+export const EditIcon = createIcon(
+  <>
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z" />
+  </>
+);
+
+export const SendIcon = createIcon(
+  <>
+    <path d="M22 2 11 13" />
+    <path d="M22 2l-7 20-4-9-9-4Z" />
+  </>
+);
+
+export const PaperclipIcon = createIcon(
+  <>
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.64 16.2a2 2 0 0 1-2.83-2.83l8.49-8.49" />
+  </>
+);
+
+export const YoutubeIcon = createIcon(
+  <>
+    <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4l14.2-4.2a2 2 0 0 1 2.4 2.4l-4.2 14.2a2 2 0 0 1-1.4 1.4Z" />
+    <path d="M10 15l5-3-5-3Z" />
+  </>
+);
+
+export const FileIcon = createIcon(
+  <>
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2Z" />
+    <path d="M14 2v6h6" />
+  </>
+);
+
+export const XIcon = createIcon(
+  <>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </>
+);
+
+export const LightbulbIcon = createIcon(
+  <>
+    <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1z" />
+    <path d="M12 2C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" />
+  </>
+);
+
 export const BookIcon = BookOpenIcon;
 export type IconComponent = React.ComponentType<IconProps>;
