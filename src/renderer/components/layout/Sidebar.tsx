@@ -11,13 +11,16 @@ import {
   LightningBoltIcon,
   SparklesIcon,
   Wand2Icon,
-  NotebookIcon
+  NotebookIcon,
+  SettingsIcon
 } from '../icons';
 import { Link, useNavigate } from '../../routes/router';
 import { calculateProgressPercent } from '../../utils/progress';
 import { useAiTokenStore } from '../../state/dashboard';
 import ProgressBar from '../ui/ProgressBar';
-import dued8Logo from '../../../assets/dued8-logos/dued8-purple-logo.png';
+import dued8PurpleLogo from '../../../assets/dued8-logos/dued8-purple-logo.png';
+import dued8WhiteLogo from '../../../assets/dued8-logos/Dued8 White Logo.png';
+import { useTheme } from '../../context/ThemeContext';
 
 const classesIcon = BookOpenIcon;
 
@@ -63,11 +66,15 @@ function isActivePath(currentPath: string, targetPath: string) {
 }
 
 export default function Sidebar({ currentPath, isOpen, onClose }: SidebarProps) {
+  const { theme } = useTheme();
   const navigate = useNavigate();
   const aiTokens = useAiTokenStore();
-  const percent = calculateProgressPercent(aiTokens.used, aiTokens.limit);
-  const nearingLimit = percent >= 80;
+  const percent = aiTokens.limit ? calculateProgressPercent(aiTokens.used, aiTokens.limit) : 0;
+  const nearingLimit = aiTokens.nearingLimit;
+  const overLimit = aiTokens.overLimit;
   const [studyOpen, setStudyOpen] = useState(true);
+  const dued8Logo = theme === 'dark' ? dued8WhiteLogo : dued8PurpleLogo;
+  const settingsActive = isActivePath(currentPath, '/settings');
 
   return (
     <>
@@ -149,6 +156,14 @@ export default function Sidebar({ currentPath, isOpen, onClose }: SidebarProps) 
             ) : null}
           </div>
           <div className="sidebar__footer">
+            <Link
+              to="/settings"
+              className={`sidebar__link sidebar__footer-link ${settingsActive ? 'sidebar__link--active' : ''}`}
+              onClick={onClose}
+            >
+              <SettingsIcon className="sidebar__icon" />
+              <span>Settings</span>
+            </Link>
             <div className={`token-card ${nearingLimit ? 'token-card--warning' : ''}`}>
               <div className="token-card__header">
                 <LightningBoltIcon className="token-card__icon" />
@@ -157,6 +172,13 @@ export default function Sidebar({ currentPath, isOpen, onClose }: SidebarProps) 
                   <p className="token-card__subtitle">
                     {aiTokens.used.toLocaleString()} / {aiTokens.limit.toLocaleString()} tokens
                   </p>
+                  {overLimit ? (
+                    <p className="token-card__notice token-card__notice--error">
+                      Daily free limit exceeded. Upgrade to keep responses flowing.
+                    </p>
+                  ) : nearingLimit ? (
+                    <p className="token-card__notice">You&apos;re nearing today&apos;s free limit.</p>
+                  ) : null}
                 </div>
               </div>
               <ProgressBar value={percent} color={nearingLimit ? 'warning' : 'primary'} />

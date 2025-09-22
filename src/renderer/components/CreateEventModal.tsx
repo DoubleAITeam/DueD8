@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { CustomEvent } from '../state/dashboard';
 
 interface CreateEventModalProps {
@@ -6,36 +6,70 @@ interface CreateEventModalProps {
   onClose: () => void;
   onSubmit: (event: Omit<CustomEvent, 'id'>) => void;
   initialDate?: string;
+  calendarOptions?: CalendarOption[];
 }
 
-const categories = [
-  { value: 'general', label: 'General', color: '#64748b' },
-  { value: 'personal', label: 'Personal', color: '#059669' },
-  { value: 'study', label: 'Study', color: '#7c3aed' },
-  { value: 'reminder', label: 'Reminder', color: '#dc2626' }
-] as const;
+type CalendarOption = {
+  id: string;
+  label: string;
+  color: string;
+  kind: 'course' | 'custom';
+  courseId?: number;
+  customCalendarId?: string;
+};
 
-export default function CreateEventModal({ isOpen, onClose, onSubmit, initialDate }: CreateEventModalProps) {
+const DEFAULT_OPTIONS: CalendarOption[] = [
+  { id: 'default-general', label: 'General', color: '#64748b', kind: 'custom', customCalendarId: 'default-general' },
+  { id: 'default-personal', label: 'Personal', color: '#059669', kind: 'custom', customCalendarId: 'default-personal' },
+  { id: 'default-study', label: 'Study', color: '#7c3aed', kind: 'custom', customCalendarId: 'default-study' },
+  { id: 'default-reminder', label: 'Reminder', color: '#dc2626', kind: 'custom', customCalendarId: 'default-reminder' }
+];
+
+export default function CreateEventModal({ isOpen, onClose, onSubmit, initialDate, calendarOptions }: CreateEventModalProps) {
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState(initialDate || new Date().toISOString().slice(0, 16));
-  const [category, setCategory] = useState<CustomEvent['category']>('general');
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('default-general');
+  const [location, setLocation] = useState('');
+  const [link, setLink] = useState('');
+
+  const options = calendarOptions?.length ? calendarOptions : DEFAULT_OPTIONS;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setTitle('');
+    setLocation('');
+    setLink('');
+    setStartAt(initialDate || new Date().toISOString().slice(0, 16));
+    setSelectedCalendarId((current) => {
+      if (current && options.some((option) => option.id === current)) {
+        return current;
+      }
+      return options[0]?.id ?? 'default-general';
+    });
+  }, [isOpen, initialDate, options]);
 
   if (!isOpen) return null;
 
+  const selectedCalendar = options.find((option) => option.id === selectedCalendarId);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !selectedCalendar) return;
     
     onSubmit({
       title: title.trim(),
       start_at: startAt,
-      category,
-      color: categories.find(c => c.value === category)?.color || '#64748b'
+      courseId: selectedCalendar.courseId,
+      customCalendarId: selectedCalendar.customCalendarId,
+      location: location.trim() || undefined,
+      link: link.trim() || undefined
     });
     
     setTitle('');
     setStartAt(initialDate || new Date().toISOString().slice(0, 16));
-    setCategory('general');
+    setSelectedCalendarId(options[0]?.id ?? 'default-general');
+    setLocation('');
+    setLink('');
     onClose();
   };
 
@@ -81,25 +115,49 @@ export default function CreateEventModal({ isOpen, onClose, onSubmit, initialDat
           </div>
 
           <div className="form-group">
-            <label>Category</label>
-            <div className="category-options">
-              {categories.map((cat) => (
-                <button
-                  key={cat.value}
-                  type="button"
-                  className={`category-option ${category === cat.value ? 'active' : ''}`}
-                  onClick={() => setCategory(cat.value)}
-                >
-                  <span className="category-color" style={{ background: cat.color }} />
-                  {cat.label}
-                </button>
-              ))}
+            <label>Calendar</label>
+            <div className="category-grid">
+              {options.length ? (
+                options.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`category-chip ${selectedCalendarId === option.id ? 'active' : ''}`}
+                    onClick={() => setSelectedCalendarId(option.id)}
+                  >
+                    <span className="category-color" style={{ background: option.color }} />
+                    {option.label}
+                  </button>
+                ))
+              ) : (
+                <p className="category-empty">Create a calendar to add events.</p>
+              )}
             </div>
+          </div>
+
+          <div className="form-group">
+            <label>Location (optional)</label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Library, Zoom, etc."
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Link (optional)</label>
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="https://..."
+            />
           </div>
 
           <div className="form-actions">
             <button type="button" onClick={onClose}>Cancel</button>
-            <button type="submit">Create</button>
+            <button type="submit" disabled={!selectedCalendar}>Create</button>
           </div>
         </form>
       </div>

@@ -12,6 +12,16 @@ import { useStore } from '../../state/store';
 import { useNavigate } from '../../routes/router';
 import { useTheme } from '../../context/ThemeContext';
 
+function normaliseForSearch(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 type TopbarProps = {
   onToggleSidebar: () => void;
 };
@@ -38,7 +48,7 @@ type CourseSearchItem = BaseSearchItem & {
 type SearchItem = AssignmentSearchItem | CourseSearchItem;
 
 export default function Topbar({ onToggleSidebar }: TopbarProps) {
-  const { name } = useUser();
+  const { name, avatarUrl } = useUser();
   const aiTokens = useAiTokenStore();
   const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
@@ -80,7 +90,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   }, []);
 
   const trimmedQuery = query.trim();
-  const normalisedQuery = trimmedQuery.toLowerCase();
+  const normalisedQuery = normaliseForSearch(trimmedQuery);
 
   const courseNameLookup = useMemo(() => {
     return rawCourses.reduce<Record<number, string>>((acc, course) => {
@@ -104,10 +114,9 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
           })
         : 'No due date provided';
       const subtitle = courseName ? `${courseName} • ${dueLabel}` : dueLabel;
-      const searchText = [assignment.name, subtitle, courseName, 'assignment']
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+      const searchText = normaliseForSearch(
+        [assignment.name, subtitle, courseName, 'assignment'].filter(Boolean).join(' ')
+      );
       map.set(assignment.id, {
         id: `assignment-${assignment.id}`,
         type: 'assignment',
@@ -126,10 +135,9 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     return rawCourses.map<CourseSearchItem>((course) => {
       const display = course.course_code || course.name;
       const subtitle = course.course_code && course.course_code !== course.name ? course.name : undefined;
-      const searchText = [display, course.name, course.course_code, 'course']
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+      const searchText = normaliseForSearch(
+        [display, course.name, course.course_code, 'course'].filter(Boolean).join(' ')
+      );
       return {
         id: `course-${course.id}`,
         type: 'course',
@@ -149,15 +157,41 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     if (!normalisedQuery) return [];
     return searchItems
       .map((item) => {
-        const index = item.searchText.indexOf(normalisedQuery);
-        if (index === -1) return null;
-        const typeWeight = item.type === 'assignment' ? 0 : 1;
-        return { item, score: index, typeWeight };
+        const matchIndex = item.searchText.indexOf(normalisedQuery);
+        if (matchIndex === -1) return null;
+
+        let dueTime: number | null = null;
+        if (item.type === 'assignment' && item.dueAt) {
+          const parsed = new Date(item.dueAt).getTime();
+          dueTime = Number.isFinite(parsed) ? parsed : null;
+        }
+
+        const typePriority = item.type === 'course' ? 0 : 1;
+
+        return { item, matchIndex, typePriority, dueTime };
       })
-      .filter((entry): entry is { item: SearchItem; score: number; typeWeight: number } => entry !== null)
+      .filter(
+        (
+          entry
+        ): entry is {
+          item: SearchItem;
+          matchIndex: number;
+          typePriority: number;
+          dueTime: number | null;
+        } => entry !== null
+      )
       .sort((a, b) => {
-        if (a.score !== b.score) return a.score - b.score;
-        if (a.typeWeight !== b.typeWeight) return a.typeWeight - b.typeWeight;
+        if (a.typePriority !== b.typePriority) return a.typePriority - b.typePriority;
+
+        if (a.item.type === 'assignment' && b.item.type === 'assignment') {
+          if (a.dueTime !== b.dueTime) {
+            if (a.dueTime === null) return 1;
+            if (b.dueTime === null) return -1;
+            return b.dueTime - a.dueTime;
+          }
+        }
+
+        if (a.matchIndex !== b.matchIndex) return a.matchIndex - b.matchIndex;
         return a.item.title.localeCompare(b.item.title);
       })
       .slice(0, 10)
@@ -241,6 +275,9 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const noMatches =
     dashboardStatus === 'ready' && normalisedQuery.length > 0 && filteredResults.length === 0;
   const showResultsPanel = isSearchOpen;
+  const tokensClassName = ['topbar__tokens', aiTokens.nearingLimit ? 'topbar__tokens--warning' : null]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <header className="topbar">
@@ -327,9 +364,16 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
         ) : null}
       </form>
       <div className="topbar__actions">
-        <div className="topbar__tokens" aria-label="AI token balance">
+        <div className={tokensClassName} aria-label="AI token balance">
           <LightningBoltIcon className="topbar__token-icon" />
-          <span>AI Tokens: {aiTokens.limit.toLocaleString()}</span>
+          <span>
+            AI Tokens: {aiTokens.used.toLocaleString()} / {aiTokens.limit.toLocaleString()}
+          </span>
+          {aiTokens.overLimit ? (
+            <span className="topbar__tokens-warning">Over daily limit</span>
+          ) : aiTokens.nearingLimit ? (
+            <span className="topbar__tokens-warning">Near limit</span>
+          ) : null}
         </div>
         <button type="button" className="icon-button" aria-label="Notifications">
           <BellIcon />
@@ -342,7 +386,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <span className="topbar__avatar-circle">{initials}</span>
+            {avatarUrl ? (
+              <span className="topbar__avatar-image" aria-hidden>
+                <img src={avatarUrl} alt="" />
+              </span>
+            ) : (
+              <span className="topbar__avatar-circle">{initials}</span>
+            )}
             <span className="topbar__avatar-name">{name}</span>
           </button>
           {menuOpen ? (

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
+import { useAiUsageStore, estimateTokensFromTexts, estimateTokensFromText } from '../state/aiUsage';
+import AiTokenBadge from '../components/ui/AiTokenBadge';
 import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
 import { buildStudyGuidePlan, type StudyGuidePlan } from '../utils/studyGuide';
@@ -293,6 +295,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     assignment ? s.assignmentContexts[assignment.id] ?? [] : []
   );
   const setToast = useStore((s) => s.setToast);
+  const registerAiTask = useAiUsageStore((state) => state.registerTask);
   const inputRef = useRef<HTMLInputElement>(null);
   const solutionUrlRef = useRef<string | null>(null);
   const lastContextSignatureRef = useRef<string | null>(null);
@@ -345,6 +348,51 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   const guardChecking = guardEnabled && solveCheck.status === 'checking';
   const solveGuardBlocked = guardEnabled && solveCheck.status === 'blocked';
   const solveButtonDisabled = !hasGuideContext || guardChecking || solveGuardBlocked;
+  const guideEstimate = useMemo(() => {
+    if (!hasGuideContext) {
+      return null;
+    }
+    const contextTokens = combinedContexts.reduce(
+      (sum, entry) => sum + estimateTokensFromText(entry.content),
+      0
+    );
+    if (guidePlan) {
+      const planTokens = estimateTokensFromTexts([
+        guidePlan.overview,
+        ...guidePlan.sections.map((section) => `${section.title}\n${section.body}`)
+      ]);
+      return {
+        total: contextTokens + planTokens,
+        contextTokens,
+        planTokens
+      };
+    }
+    const projectedPlanTokens = Math.max(480, Math.round(contextTokens * 0.4));
+    return {
+      total: contextTokens + projectedPlanTokens,
+      contextTokens,
+      planTokens: projectedPlanTokens
+    };
+  }, [combinedContexts, guidePlan, hasGuideContext]);
+
+  const solutionEstimate = useMemo(() => {
+    if (!hasGuideContext) {
+      return null;
+    }
+    const contextTokens = combinedContexts.reduce(
+      (sum, entry) => sum + estimateTokensFromText(entry.content),
+      0
+    );
+    const draftTokens = Math.max(520, Math.round(contextTokens * 0.3));
+    return contextTokens + draftTokens;
+  }, [combinedContexts, hasGuideContext]);
+
+  const parseEstimate = useMemo(() => {
+    if (!userContexts.length) {
+      return null;
+    }
+    return userContexts.reduce((sum, entry) => sum + estimateTokensFromText(entry.content), 0);
+  }, [userContexts]);
 
   useEffect(() => {
     return () => {
@@ -585,6 +633,24 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         if (cancelled) {
           return;
         }
+        const contextTokens = combinedContexts.reduce(
+          (sum, entry) => sum + estimateTokensFromText(entry.content),
+          0
+        );
+        const documentTokens = estimateTokensFromText(content) + 200;
+        registerAiTask({
+          label: `Assemble submission draft for ${assignment.name}`,
+          category: 'generate',
+          steps: [
+            { label: 'Interpret instructions', tokenEstimate: contextTokens },
+            { label: `Compose ${extension.toUpperCase()} draft`, tokenEstimate: documentTokens }
+          ],
+          metadata: {
+            assignmentId: assignment.id,
+            extension,
+            sourceCount: combinedContexts.length
+          }
+        });
         const sanitizedOriginal = safeDownloadName(
           originalName || `${assignment.name ?? 'assignment'}.${extension}`
         );
@@ -628,7 +694,8 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     instructorContexts,
     solutionStatus,
     solveCheck.status,
-    userContexts
+    userContexts,
+    registerAiTask
   ]);
 
   const retrySolutionGeneration = () => {
@@ -663,6 +730,14 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         dueAt: assignment.due_at ?? null,
         contexts: combinedContexts
       });
+      const contextTokens = combinedContexts.reduce(
+        (sum, entry) => sum + estimateTokensFromText(entry.content),
+        0
+      );
+      const guideTokens = estimateTokensFromTexts([
+        plan.overview,
+        ...plan.sections.map((section) => `${section.title}\n${section.body}`)
+      ]);
       const totalSections = plan.sections.length;
       const runId = Date.now();
       activeGuideRunRef.current = runId;
@@ -689,6 +764,18 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       }
       setGuideProgress(null);
       setGuideStatus('ready');
+      registerAiTask({
+        label: `Generate study guide for ${assignment.name}`,
+        category: 'generate',
+        steps: [
+          { label: 'Analyse context', tokenEstimate: contextTokens },
+          { label: 'Draft guide', tokenEstimate: guideTokens }
+        ],
+        metadata: {
+          assignmentId: assignment.id,
+          sectionCount: plan.sections.length
+        }
+      });
     } catch (err) {
       console.error('Failed to generate study guide', err);
       if (previousPlan) {
@@ -734,6 +821,10 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   async function handleFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList ?? []);
     if (!files.length) return;
+    if (!assignment) {
+      setError('Open an assignment before uploading files.');
+      return;
+    }
 
     const supported = files.filter((file) => {
       const ext = file.name.split('.').pop()?.toLowerCase();
@@ -774,6 +865,24 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       if (!combined.length) {
         throw new Error('We could not extract readable text from those files.');
       }
+
+      const extractionTokens = combined.reduce(
+        (sum, entry) => sum + estimateTokensFromText(entry.content),
+        0
+      );
+      const overheadTokens = combined.length * 80;
+      registerAiTask({
+        label: `Parse ${combined.length} Canvas file${combined.length === 1 ? '' : 's'}`,
+        category: 'parse',
+        steps: [
+          { label: 'Extract text', tokenEstimate: extractionTokens },
+          { label: 'Prepare summaries', tokenEstimate: overheadTokens }
+        ],
+        metadata: {
+          assignmentId: assignment.id,
+          fileNames: combined.map((entry) => entry.fileName)
+        }
+      });
 
       appendAssignmentContext(
         assignment.id,
@@ -916,6 +1025,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
           {processing ? 'Processing files…' : 'We will extract text automatically for the chatbot.'}
         </div>
+        {parseEstimate ? <AiTokenBadge category="parse" tokens={parseEstimate} /> : null}
       </div>
 
       {status === 'success' && !processing ? (
@@ -1078,6 +1188,9 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                     >
                       Download {solutionFile.fileName}
                     </a>
+                    {solutionEstimate ? (
+                      <AiTokenBadge category="generate" tokens={solutionEstimate} />
+                    ) : null}
                     <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
                       Save the completed file before exploring the deeper guidance below.
                     </span>
@@ -1092,6 +1205,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
                   onGenerate={generateGuide}
                   canGenerate={solutionStatus === 'ready'}
                   error={guideError}
+                  estimate={guideEstimate}
                 />
               ) : null}
             </div>

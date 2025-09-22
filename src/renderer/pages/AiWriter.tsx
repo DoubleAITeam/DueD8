@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
+import AiTokenBadge from '../components/ui/AiTokenBadge';
+import { useAiUsageStore, estimateTokensFromText, estimateTokensFromTexts } from '../state/aiUsage';
 
 type DocumentCategory = 'draft' | 'rubric' | 'instructions' | 'notes' | 'research' | 'other';
 
@@ -584,6 +586,7 @@ function AiWriter() {
   const [activeAssignmentId, setActiveAssignmentId] = useState<string>('');
   const [analysisStatus, setAnalysisStatus] = useState<Record<string, 'idle' | 'running'>>({});
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const registerAiTask = useAiUsageStore((state) => state.registerTask);
 
   useEffect(() => {
     if (!activeAssignmentId && assignments.length) {
@@ -606,6 +609,40 @@ function AiWriter() {
       return activeAssignment.analysis.summary;
     }
     return summariseAnalysis(null);
+  }, [activeAssignment]);
+
+  const analysisEstimate = useMemo(() => {
+    if (!activeAssignment || !activeAssignment.files.length) {
+      return null;
+    }
+    const inputTokens = activeAssignment.files.reduce(
+      (sum, file) => sum + estimateTokensFromText(file.content),
+      0
+    );
+    let outputTokens = 0;
+    if (activeAssignment.analysis) {
+      outputTokens = estimateTokensFromTexts([
+        activeAssignment.analysis.summary,
+        ...activeAssignment.analysis.suggestions.map((suggestion) => `${suggestion.title}\n${suggestion.detail}`)
+      ]);
+    } else {
+      outputTokens = Math.max(320, Math.round(inputTokens * 0.45));
+    }
+    return {
+      total: inputTokens + outputTokens,
+      inputTokens,
+      outputTokens
+    };
+  }, [activeAssignment]);
+
+  const parseEstimate = useMemo(() => {
+    if (!activeAssignment || !activeAssignment.files.length) {
+      return null;
+    }
+    return activeAssignment.files.reduce(
+      (sum, file) => sum + estimateTokensFromText(file.content),
+      0
+    );
   }, [activeAssignment]);
 
   const handleCreateAssignment = useCallback(() => {
@@ -656,29 +693,63 @@ function AiWriter() {
     });
   }, [assignments]);
 
-  const runAnalysis = useCallback((assignmentId: string) => {
-    setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'running' }));
-    setTimeout(() => {
-      setAssignments((prev) =>
-        prev.map((assignment) => {
-          if (assignment.id !== assignmentId) return assignment;
-          const analysis = analyseAssignment(assignment);
-          return {
-            ...assignment,
-            analysis,
-            lastAnalyzedAt: Date.now()
-          };
-        })
-      );
-      setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'idle' }));
-      setFeedback({ type: 'success', message: 'Suggestions updated.' });
-    }, 60);
-  }, []);
+  const runAnalysis = useCallback(
+    (assignmentId: string) => {
+      const targetAssignment = assignments.find((assignment) => assignment.id === assignmentId);
+      if (!targetAssignment) {
+        return;
+      }
+
+      setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'running' }));
+      setTimeout(() => {
+        const analysis = analyseAssignment(targetAssignment);
+        setAssignments((prev) =>
+          prev.map((assignment) =>
+            assignment.id === assignmentId
+              ? {
+                  ...assignment,
+                  analysis,
+                  lastAnalyzedAt: Date.now()
+                }
+              : assignment
+          )
+        );
+
+        const inputTokens = targetAssignment.files.reduce(
+          (sum, file) => sum + estimateTokensFromText(file.content),
+          0
+        );
+        const suggestionTokens = estimateTokensFromTexts([
+          analysis.summary,
+          ...analysis.suggestions.map((suggestion) => `${suggestion.title}\n${suggestion.detail}`),
+          ...analysis.rubricHighlights.map((highlight) => highlight.criterion)
+        ]);
+        registerAiTask({
+          label: `Analyse ${targetAssignment.title}`,
+          category: 'analyze',
+          steps: [
+            { label: 'Review uploaded docs', tokenEstimate: inputTokens },
+            { label: 'Draft suggestions', tokenEstimate: suggestionTokens }
+          ],
+          metadata: {
+            assignmentId,
+            fileCount: targetAssignment.files.length,
+            suggestionCount: analysis.suggestions.length
+          }
+        });
+
+        setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'idle' }));
+        setFeedback({ type: 'success', message: 'Suggestions updated.' });
+      }, 60);
+    },
+    [assignments, registerAiTask]
+  );
 
   const handleUpload = useCallback(
     async (assignmentId: string, fileList: FileList | null) => {
       if (!fileList || !fileList.length) return;
       const files = Array.from(fileList);
+      const assignmentRecord = assignments.find((item) => item.id === assignmentId);
       setFeedback(null);
       setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'running' }));
 
@@ -719,6 +790,25 @@ function AiWriter() {
           })
         );
 
+        const extractionTokens = parsed.reduce(
+          (sum, file) => sum + estimateTokensFromText(file.content),
+          0
+        );
+        const metadataTokens = parsed.length * 60;
+        registerAiTask({
+          label: `Parse ${parsed.length} document${parsed.length === 1 ? '' : 's'} for ${assignmentRecord?.title ?? 'assignment'}`,
+          category: 'parse',
+          steps: [
+            { label: 'Extract text', tokenEstimate: extractionTokens },
+            { label: 'Categorise content', tokenEstimate: metadataTokens }
+          ],
+          metadata: {
+            assignmentId,
+            fileNames: parsed.map((file) => file.fileName),
+            categories: parsed.map((file) => file.category)
+          }
+        });
+
         setFeedback({
           type: 'success',
           message: `Uploaded ${parsed.length} file${parsed.length === 1 ? '' : 's'} successfully.`
@@ -730,7 +820,7 @@ function AiWriter() {
         setAnalysisStatus((prev) => ({ ...prev, [assignmentId]: 'idle' }));
       }
     },
-    []
+    [assignments, registerAiTask]
   );
 
   const handleSelectFile = useCallback((assignmentId: string, fileId: string) => {
@@ -838,6 +928,7 @@ function AiWriter() {
                     />
                     Upload files
                   </label>
+                  {parseEstimate ? <AiTokenBadge category="parse" tokens={parseEstimate} /> : null}
                   <button
                     type="button"
                     className="ai-writer__regenerate"
@@ -846,6 +937,9 @@ function AiWriter() {
                   >
                     {analysisStatus[activeAssignment.id] === 'running' ? 'Analysing…' : 'Regenerate Suggestions'}
                   </button>
+                  {analysisEstimate ? (
+                    <AiTokenBadge category="analyze" tokens={analysisEstimate.total} />
+                  ) : null}
                 </div>
               </div>
 
