@@ -9,6 +9,8 @@ import {
 } from '../state/notes';
 import { useStore } from '../state/store';
 import { useNavigate } from '../routes/router';
+import { useAiUsageStore, estimateTokensFromText, estimateTokensFromTexts } from '../state/aiUsage';
+import AiTokenBadge from '../components/ui/AiTokenBadge';
 
 const INPUT_MODES = [
   {
@@ -181,6 +183,130 @@ type SimulatedTranscription = {
   numbers: string[];
 };
 
+type YoutubeTranscription = SimulatedTranscription & {
+  videoId: string;
+  videoTitle: string;
+  channelName: string;
+  startOffset?: number;
+};
+
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be']);
+
+function parseYoutubeVideoId(rawUrl: string): { videoId: string; startOffset?: number } | null {
+  try {
+    const url = new URL(rawUrl.trim());
+    if (!YOUTUBE_HOSTS.has(url.hostname)) {
+      return null;
+    }
+
+    let videoId = '';
+    if (url.hostname === 'youtu.be') {
+      videoId = url.pathname.slice(1);
+    } else if (url.pathname.startsWith('/watch')) {
+      videoId = url.searchParams.get('v') ?? '';
+    } else if (url.pathname.startsWith('/shorts/')) {
+      videoId = url.pathname.split('/shorts/')[1]?.split(/[/?#]/)[0] ?? '';
+    } else if (url.pathname.startsWith('/embed/')) {
+      videoId = url.pathname.split('/embed/')[1]?.split(/[/?#]/)[0] ?? '';
+    }
+
+    videoId = videoId.trim();
+    if (!videoId) {
+      return null;
+    }
+
+    const timeParam = url.searchParams.get('t') ?? url.searchParams.get('start') ?? undefined;
+    let startOffset: number | undefined;
+    if (timeParam) {
+      const timeValue = timeParam.toString();
+      const hmsMatch = timeValue.match(/^(\d+)?h?(\d+)?m?(\d+)?s?$/i);
+      if (hmsMatch) {
+        const hours = parseInt(hmsMatch[1] ?? '0', 10);
+        const minutes = parseInt(hmsMatch[2] ?? '0', 10);
+        const seconds = parseInt(hmsMatch[3] ?? '0', 10);
+        startOffset = hours * 3600 + minutes * 60 + seconds;
+      } else {
+        const numeric = Number.parseInt(timeValue, 10);
+        if (!Number.isNaN(numeric) && numeric >= 0) {
+          startOffset = numeric;
+        }
+      }
+    }
+
+    return { videoId, startOffset };
+  } catch (error) {
+    return null;
+  }
+}
+
+function synthesiseYoutubeTitle(videoId: string): string {
+  const cleaned = videoId.replace(/[^a-z0-9]+/gi, ' ').trim();
+  if (cleaned.length > 0) {
+    const words = cleaned.split(/\s+/).map((word) => word.toLowerCase());
+    const unique = Array.from(new Set(words)).slice(0, 5);
+    if (unique.length > 0) {
+      return `${unique.map((word) => word[0]?.toUpperCase() + word.slice(1)).join(' ')} Lecture Recap`;
+    }
+  }
+  const fallbacks = ['Lecture', 'Seminar', 'Workshop', 'Study Session', 'Deep Dive'];
+  const token = videoId.slice(0, 3).toUpperCase();
+  return `${fallbacks[videoId.charCodeAt(0) % fallbacks.length]} ${token} Recap`;
+}
+
+function synthesiseYoutubeChannel(videoId: string): string {
+  const seeds = ['Campus Collective', 'Learning Loop', 'Insight Academy', 'Focus Lab', 'Course Companion'];
+  const index = videoId.charCodeAt(videoId.length - 1) % seeds.length;
+  return seeds[index];
+}
+
+async function simulateYoutubeTranscription(url: string): Promise<YoutubeTranscription> {
+  const parsed = parseYoutubeVideoId(url);
+  if (!parsed) {
+    throw new Error('Enter a valid YouTube link.');
+  }
+
+  const { videoId, startOffset } = parsed;
+  const videoTitle = synthesiseYoutubeTitle(videoId);
+  const channelName = synthesiseYoutubeChannel(videoId);
+
+  const topicSeeds = ['Overview', 'Key Ideas', 'Case Study', 'Takeaways', 'Next Steps'];
+  const segments = topicSeeds.map((topic, index) => {
+    const variantIndex = (videoId.charCodeAt(index % videoId.length) + index) % topicSeeds.length;
+    const selectedTopic = topicSeeds[variantIndex];
+    return {
+      topic: `${selectedTopic}`,
+      summary: `Detailed breakdown of ${selectedTopic.toLowerCase()} with definitions, examples, and prompts linked to ${channelName}.`,
+      marker: `${index + 1}0:${index === 0 ? '05' : '45'}`
+    };
+  });
+
+  const transcript = segments
+    .map(
+      (segment, index) =>
+        `Chapter ${index + 1} (${segment.marker}) — ${segment.topic}: ${segment.summary} Highlighted moments reference ${videoTitle}.`
+    )
+    .join('\n\n');
+
+  const keyTakeaways = segments.map(
+    (segment) => `${segment.topic}: Capture the main definitions, numbered frameworks, and action steps.`
+  );
+
+  const numbers = segments.map((_, index) => `${index + 1}`).concat(videoId.slice(0, 4));
+
+  await new Promise((resolve) => setTimeout(resolve, 600));
+
+  return {
+    transcript,
+    segments,
+    keyTakeaways,
+    numbers,
+    videoId,
+    videoTitle,
+    channelName,
+    startOffset
+  };
+}
+
 async function simulateAudioTranscription(file: File): Promise<SimulatedTranscription> {
   const base = file.name.replace(/\.[^.]+$/, '').replace(/[._]+/g, ' ');
   const tokens = base.split(/[-\s]/).filter(Boolean);
@@ -245,6 +371,7 @@ export default function NoteLibrary() {
   const setToast = useStore((state) => state.setToast);
   const profile = useStore((state) => state.profile);
   const navigate = useNavigate();
+  const registerAiTask = useAiUsageStore((state) => state.registerTask);
 
   const isPremium = profile?.plan === 'premium' || profile?.isPremium === true;
 
@@ -281,6 +408,29 @@ export default function NoteLibrary() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const noteTokenEstimate = useMemo(() => {
+    if (mode === 'text') {
+      const base = estimateTokensFromText(textInput);
+      if (!base) return null;
+      const summary = Math.max(180, Math.round(base * 0.45));
+      return { total: base + summary, category: 'summarize' as const };
+    }
+    if (mode === 'image') {
+      if (!imageFile) return null;
+      const size = imageFile.size || 0;
+      const ocrTokens = Math.max(450, Math.round(size / 12));
+      const summary = 320;
+      return { total: ocrTokens + summary, category: 'parse' as const };
+    }
+    if (mode === 'audio') {
+      if (!audioFile) return null;
+      const size = audioFile.size || 0;
+      const transcriptionTokens = Math.max(900, Math.round(size / 6));
+      const recap = 420;
+      return { total: transcriptionTokens + recap, category: 'transcribe' as const };
+    }
+    return null;
+  }, [mode, textInput, imageFile, audioFile]);
 
   const filteredNotes = useMemo(() => {
     if (viewFilter === 'all') return notes;
@@ -326,6 +476,14 @@ export default function NoteLibrary() {
     try {
       setError(null);
       setIsProcessing(true);
+      let pendingTask:
+        | {
+            label: string;
+            category: 'summarize' | 'parse' | 'transcribe';
+            steps: Array<{ label: string; tokenEstimate: number }>;
+            metadata?: Record<string, unknown>;
+          }
+        | null = null;
       if (mode === 'text') {
         const trimmed = textInput.trim();
         if (!trimmed) {
@@ -341,6 +499,24 @@ export default function NoteLibrary() {
         setDraftAnalysis(analysis);
         setDraftSource({ type: 'text', transcript: trimmed });
         setDraftTitle(analysis.suggestedTitle ?? '');
+        const interpretationTokens = estimateTokensFromText(trimmed);
+        const structuringTokens = estimateTokensFromTexts([
+          blocks.join('\n'),
+          analysis.keyTakeaways.join(' '),
+          analysis.topics.map((topic) => `${topic.heading}: ${topic.detail}`).join('\n')
+        ]);
+        pendingTask = {
+          label: 'Organise typed notes',
+          category: 'summarize',
+          steps: [
+            { label: 'Interpret text', tokenEstimate: interpretationTokens },
+            { label: 'Cluster highlights', tokenEstimate: structuringTokens }
+          ],
+          metadata: {
+            source: 'text',
+            blockCount: blocks.length
+          }
+        };
       } else if (mode === 'image') {
         if (!imageFile) {
           setError('Choose an image to run OCR.');
@@ -361,6 +537,23 @@ export default function NoteLibrary() {
           transcript: extracted
         });
         setDraftTitle(analysis.suggestedTitle ?? toTitleCase(imageFile.name.replace(/\.[^.]+$/, '')));
+        const ocrTokens = estimateTokensFromText(extracted) + 150;
+        const organisationTokens = estimateTokensFromTexts([
+          blocks.join('\n'),
+          analysis.keyTakeaways.join(' ')
+        ]);
+        pendingTask = {
+          label: 'OCR & organise image notes',
+          category: 'parse',
+          steps: [
+            { label: 'Extract handwriting', tokenEstimate: ocrTokens },
+            { label: 'Summarise highlights', tokenEstimate: organisationTokens }
+          ],
+          metadata: {
+            source: 'image',
+            fileName: imageFile.name
+          }
+        };
       } else {
         if (!audioFile) {
           setError('Select an audio file to transcribe.');
@@ -400,6 +593,28 @@ export default function NoteLibrary() {
           transcript: transcription.transcript
         });
         setDraftTitle(mergedAnalysis.suggestedTitle ?? `${toTitleCase(audioFile.name.replace(/\.[^.]+$/, ''))} recap`);
+        const transcriptionTokens = estimateTokensFromText(transcription.transcript) + 400;
+        const recapTokens = estimateTokensFromTexts([
+          mergedBlocks.join('\n'),
+          mergedAnalysis.keyTakeaways.join(' ')
+        ]);
+        pendingTask = {
+          label: 'Transcribe & organise audio notes',
+          category: 'transcribe',
+          steps: [
+            { label: 'Transcribe audio', tokenEstimate: transcriptionTokens },
+            { label: 'Outline recap', tokenEstimate: recapTokens }
+          ],
+          metadata: {
+            source: 'audio',
+            fileName: audioFile.name,
+            segmentCount: transcription.segments.length
+          }
+        };
+      }
+
+      if (pendingTask) {
+        registerAiTask(pendingTask);
       }
     } finally {
       setIsProcessing(false);
@@ -432,6 +647,41 @@ export default function NoteLibrary() {
     if (noteId && viewFilter === 'all') {
       // keep latest note visible in history by scrolling into view if needed later
     }
+  }
+
+  function quickSaveCurrentText() {
+    setError(null);
+    if (mode !== 'text') {
+      setError('Quick save is available for typed notes. Use AI organise for uploads.');
+      return;
+    }
+
+    const trimmed = textInput.trim();
+    if (!trimmed) {
+      setError('Add some text before saving.');
+      return;
+    }
+
+    const normalised = normaliseWhitespace(trimmed);
+    const paragraphs = normalised
+      .split(/\n{2,}/)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    const blocks = paragraphs.length > 0 ? paragraphs : [normalised];
+    const targetClassId = linkClassId || GENERAL_NOTE_CLASS_ID;
+
+    addNote({
+      classId: targetClassId,
+      contentType: 'text',
+      parsedNotes: blocks,
+      transcript: normalised,
+      title: deriveTitleFromText(normalised)
+    });
+
+    const className = classLookup.get(targetClassId) ?? 'selected class';
+    setToast(`Saved notes to ${className}.`);
+    setTextInput('');
+    resetDraft('text');
   }
 
   function renderDraftEditor() {
@@ -692,9 +942,20 @@ export default function NoteLibrary() {
             ) : null}
           </div>
           <div className="note-library__actions">
+            <button
+              type="button"
+              className="note-library__save"
+              onClick={quickSaveCurrentText}
+              disabled={mode !== 'text' || textInput.trim().length === 0 || isProcessing}
+            >
+              Save
+            </button>
             <button type="button" onClick={processInput} disabled={isProcessing}>
               {isProcessing ? 'Processing…' : 'Organise with AI'}
             </button>
+            {noteTokenEstimate ? (
+              <AiTokenBadge category={noteTokenEstimate.category} tokens={noteTokenEstimate.total} />
+            ) : null}
           </div>
           {error ? <p className="note-library__error">{error}</p> : null}
         </section>

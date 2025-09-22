@@ -4,6 +4,8 @@ import type { AssignmentContextEntry, ViewState } from '../state/store';
 import { useStore } from '../state/store';
 import { featureFlags } from '../../shared/featureFlags';
 import { deriveCourseGrade } from '../../lib/gradeUtils';
+import { useAiUsageStore, estimateTokensFromText } from '../state/aiUsage';
+import AiTokenBadge from './ui/AiTokenBadge';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -428,6 +430,7 @@ export default function ChatbotPanel({
     : [];
   const chatbotMinimized = useStore((s) => s.chatbotMinimized);
   const setChatbotMinimized = useStore((s) => s.setChatbotMinimized);
+  const registerAiTask = useAiUsageStore((state) => state.registerTask);
   const chatFriendly = featureFlags.chatFriendliness;
   const [studentProfile, setStudentProfile] = useState<StudentProfile>({});
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -498,6 +501,16 @@ export default function ChatbotPanel({
     ];
   }, [view, selectedAssignment, selectedCourse, activeAssignmentContexts, upcomingAssignments]);
 
+  const chatTokenEstimate = useMemo(() => {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const promptTokens = estimateTokensFromText(trimmed) + 120;
+    const expectedReply = Math.max(200, Math.round(promptTokens * 0.75));
+    return promptTokens + expectedReply;
+  }, [input]);
+
   function sendMessage(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -528,9 +541,23 @@ export default function ChatbotPanel({
         ? `${acknowledgement}\n\n${nextQuestion.prompt}`
         : `${acknowledgement}${summarySection}\n\nThat’s everything I need to personalise our chats—ask me anything about your courses or workload.`;
 
+      const intakePromptTokens = estimateTokensFromText(trimmed);
+      const intakeReplyTokens = estimateTokensFromText(followUp);
       window.setTimeout(() => {
         setMessages((prev) => [...prev, { role: 'assistant', content: followUp }]);
         setLoading(false);
+        registerAiTask({
+          label: 'Study Coach profile intake',
+          category: 'chat',
+          steps: [
+            { label: 'Understand response', tokenEstimate: intakePromptTokens },
+            { label: 'Compose follow-up', tokenEstimate: intakeReplyTokens }
+          ],
+          metadata: {
+            stage: 'profile-intake',
+            questionKey: currentQuestion.key
+          }
+        });
       }, 200);
       return;
     }
@@ -554,9 +581,24 @@ export default function ChatbotPanel({
         });
     const processedReply = postProcessAssistantResponse(reply, lastAssistantMessage);
 
+    const promptTokens = estimateTokensFromText(trimmed) + 120;
+    const replyTokens = estimateTokensFromText(processedReply);
     window.setTimeout(() => {
       setMessages((prev) => [...prev, { role: 'assistant', content: processedReply }]);
       setLoading(false);
+      registerAiTask({
+        label: 'Study Coach chat',
+        category: 'chat',
+        steps: [
+          { label: 'Process prompt', tokenEstimate: promptTokens },
+          { label: 'Draft response', tokenEstimate: replyTokens }
+        ],
+        metadata: {
+          context: view.screen,
+          courseId: selectedCourse?.id,
+          assignmentId: selectedAssignment?.id
+        }
+      });
     }, 200);
   }
 
@@ -735,6 +777,7 @@ export default function ChatbotPanel({
         >
           Send
         </button>
+        {chatTokenEstimate ? <AiTokenBadge category="chat" tokens={chatTokenEstimate} /> : null}
       </form>
     </aside>
   );

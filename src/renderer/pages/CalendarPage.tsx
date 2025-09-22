@@ -10,6 +10,8 @@ import {
   useSetCourseColor,
   useCustomEventActions,
   useCustomEvents,
+  useCustomCalendars,
+  useCustomCalendarActions,
   type CustomEvent as DashboardCustomEvent
 } from '../state/dashboard';
 import { coursePalette, getCourseColor } from '../utils/colors';
@@ -20,6 +22,18 @@ type CalendarOption = {
   id: string;
   label: string;
   color?: string;
+  kind: 'course' | 'custom' | 'canvas';
+  courseId?: number;
+  customCalendarId?: string;
+};
+
+type EventCalendarOption = {
+  id: string;
+  label: string;
+  color: string;
+  kind: 'course' | 'custom';
+  courseId?: number;
+  customCalendarId?: string;
 };
 
 function startOfMonth(date: Date) {
@@ -48,6 +62,7 @@ export default function CalendarPage() {
   const rawCourses = useRawCourses();
   const calendarItems = useCalendarItems();
   const customEvents = useCustomEvents();
+  const customCalendars = useCustomCalendars();
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [mode, setMode] = useState<'month' | 'week' | 'list'>('month');
@@ -56,10 +71,17 @@ export default function CalendarPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [createPopupPosition, setCreatePopupPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const initializedFilters = useRef(false);
   const courseColors = useCourseColors();
   const setCourseColor = useSetCourseColor();
   const { addCustomEvent, deleteCustomEvent } = useCustomEventActions();
+  const { addCustomCalendar, updateCustomCalendar } = useCustomCalendarActions();
+
+  const customCalendarMap = useMemo(
+    () => new Map(customCalendars.map((calendar) => [calendar.id, calendar])),
+    [customCalendars]
+  );
 
   const courseLookup = useMemo(() => {
     const map = new Map<number, string>();
@@ -69,23 +91,57 @@ export default function CalendarPage() {
     return map;
   }, [rawCourses]);
 
+  const courseIndexLookup = useMemo(() => {
+    const map = new Map<number, number>();
+    rawCourses.forEach((course, index) => {
+      map.set(course.id, index);
+    });
+    return map;
+  }, [rawCourses]);
+
+  const customEventMap = useMemo(
+    () => new Map(customEvents.map((event) => [event.id, event])),
+    [customEvents]
+  );
+
+  function resolveColor(courseId?: number, customCalendarId?: string) {
+    if (courseId != null) {
+      const courseIndex = courseIndexLookup.get(courseId) ?? 0;
+      const fallbackColor = getCourseColor(courseId, courseIndex);
+      return courseColors[courseId] ?? fallbackColor;
+    }
+
+    if (customCalendarId) {
+      return customCalendarMap.get(customCalendarId)?.color ?? '#059669';
+    }
+
+    return '#64748b';
+  }
+
   const filterOptions = useMemo<CalendarOption[]>(() => {
-    const options: CalendarOption[] = rawCourses.map((course, index) => ({
+    const courseOptions: CalendarOption[] = rawCourses.map((course, index) => ({
       id: `course-${course.id}`,
       label: course.course_code || course.name,
-      color: courseColors[course.id] ?? getCourseColor(course.id, index)
+      color: courseColors[course.id] ?? getCourseColor(course.id, index),
+      kind: 'course',
+      courseId: course.id
     }));
 
+    const customCalendarOptions: CalendarOption[] = customCalendars.map((calendar) => ({
+      id: `custom-${calendar.id}`,
+      label: calendar.name,
+      color: calendar.color,
+      kind: 'custom',
+      customCalendarId: calendar.id
+    }));
+
+    const canvasOptions: CalendarOption[] = [];
     if (calendarItems.some((item) => item.courseId == null && item.source === 'event')) {
-      options.push({ id: 'general', label: 'Canvas events', color: '#64748b' });
+      canvasOptions.push({ id: 'canvas-general', label: 'Canvas events', color: '#64748b', kind: 'canvas' });
     }
 
-    if (calendarItems.some((item) => item.source === 'custom')) {
-      options.push({ id: 'custom', label: 'My events', color: '#059669' });
-    }
-
-    return options;
-  }, [rawCourses, calendarItems, courseColors]);
+    return [...courseOptions, ...customCalendarOptions, ...canvasOptions];
+  }, [rawCourses, courseColors, customCalendars, calendarItems]);
 
   useEffect(() => {
     if (!colorMenu) return;
@@ -134,8 +190,14 @@ export default function CalendarPage() {
   const filteredItems = useMemo(() => {
     if (!activeFilterSet.size) return [];
     return calendarItems.filter((item) => {
-      const filterId = item.courseId != null ? `course-${item.courseId}` : 
-                      item.source === 'custom' ? 'custom' : 'general';
+      let filterId: string;
+      if (item.courseId != null) {
+        filterId = `course-${item.courseId}`;
+      } else if (item.source === 'custom' && item.customCalendarId) {
+        filterId = `custom-${item.customCalendarId}`;
+      } else {
+        filterId = 'canvas-general';
+      }
       return activeFilterSet.has(filterId);
     });
   }, [calendarItems, activeFilterSet]);
@@ -182,6 +244,23 @@ export default function CalendarPage() {
     if (mode === 'week') return weekFilteredItems;
     return monthFilteredItems;
   }, [mode, filteredItems, weekFilteredItems, monthFilteredItems]);
+
+  const eventCalendarOptions = useMemo<EventCalendarOption[]>(
+    () =>
+      filterOptions
+        .filter((option): option is CalendarOption & { kind: 'course' | 'custom' } =>
+          option.kind === 'course' || option.kind === 'custom'
+        )
+        .map((option) => ({
+          id: option.id,
+          label: option.label,
+          color: option.color ?? '#64748b',
+          kind: option.kind,
+          courseId: option.courseId,
+          customCalendarId: option.customCalendarId
+        })),
+    [filterOptions]
+  );
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, typeof filteredItems>();
@@ -294,15 +373,8 @@ export default function CalendarPage() {
     setContextMenu(null);
   }
 
-  const categoryColors = {
-    'general': '#64748b',
-    'personal': '#059669', 
-    'study': '#7c3aed',
-    'reminder': '#dc2626'
-  };
-
   function renderDeleteButton(event: DashboardCustomEvent) {
-    const eventColor = categoryColors[event.category] || '#64748b';
+    const eventColor = resolveColor(event.courseId, event.customCalendarId);
     const eventTime = new Date(event.start_at).toLocaleTimeString([], { 
       hour: '2-digit', 
       minute: '2-digit' 
@@ -391,10 +463,21 @@ export default function CalendarPage() {
           </div>
           {filterOptions.length ? (
             <div className="calendar-filters">
+              <button
+                type="button"
+                className="calendar-filter calendar-filter--add"
+                onClick={() => setShowCalendarModal(true)}
+                aria-label="Add calendar"
+              >
+                <span className="calendar-filter__dot calendar-filter__dot--add" aria-hidden>
+                  +
+                </span>
+                <span>Add calendar</span>
+              </button>
               {filterOptions.map((option) => {
                 const active = activeFilterSet.has(option.id);
-                const isCourseOption = option.id.startsWith('course-');
-                const courseId = isCourseOption ? Number(option.id.slice(7)) : null;
+                const isCourseOption = option.kind === 'course' && option.courseId != null;
+                const isCustomCalendarOption = option.kind === 'custom' && option.customCalendarId;
                 const dotColor = option.color || '#64748b';
 
                 return (
@@ -410,25 +493,33 @@ export default function CalendarPage() {
                       style={{ background: dotColor }}
                       aria-hidden
                       onClick={(event) => {
-                        if (!courseId) return;
+                        if (!isCourseOption && !isCustomCalendarOption) return;
                         event.preventDefault();
                         event.stopPropagation();
                         setColorMenu((current) => (current === option.id ? null : option.id));
                       }}
                     />
                     <span>{option.label}</span>
-                    {courseId && colorMenu === option.id ? (
+                    {(isCourseOption || isCustomCalendarOption) && colorMenu === option.id ? (
                       <div className="calendar-color-picker" onClick={(event) => event.stopPropagation()}>
                         {coursePalette.map((color) => (
                           <button
                             key={color}
                             type="button"
                             className={`calendar-color-picker__color${
-                              (courseColors[courseId] ?? '') === color ? ' calendar-color-picker__color--active' : ''
+                              (isCourseOption
+                                ? (courseColors[option.courseId!] ?? '')
+                                : customCalendarMap.get(option.customCalendarId!)?.color ?? '') === color
+                                ? ' calendar-color-picker__color--active'
+                                : ''
                             }`}
                             style={{ background: color }}
                             onClick={() => {
-                              setCourseColor(courseId, color);
+                              if (isCourseOption) {
+                                setCourseColor(option.courseId!, color);
+                              } else if (isCustomCalendarOption) {
+                                updateCustomCalendar(option.customCalendarId!, { color });
+                              }
                               setColorMenu(null);
                             }}
                             aria-label={`Set ${option.label} calendar color`}
@@ -456,21 +547,8 @@ export default function CalendarPage() {
                 .map((item) => {
                   const date = new Date(item.start_at);
                   const courseName = item.courseId != null ? courseLookup.get(item.courseId) : item.context_name;
-                  const index = item.courseId != null
-                    ? rawCourses.findIndex((course) => course.id === item.courseId)
-                    : -1;
-                  
-                  let color: string;
-                  if (item.source === 'custom') {
-                    // Use custom event color based on category
-                    color = item.context_name === 'general' ? '#64748b' :
-                            item.context_name === 'personal' ? '#059669' :
-                            item.context_name === 'study' ? '#7c3aed' :
-                            item.context_name === 'reminder' ? '#dc2626' : '#059669';
-                  } else {
-                    const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
-                    color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
-                  }
+                  const color = resolveColor(item.courseId, item.customCalendarId);
+                  const linkedCustomEvent = item.source === 'custom' ? customEventMap.get(item.id) : undefined;
                   
                   return (
                     <article key={item.id} className="calendar-list__item">
@@ -486,6 +564,24 @@ export default function CalendarPage() {
                           })}
                           {courseName ? <span> • {courseName}</span> : null}
                         </p>
+                        {linkedCustomEvent?.location || linkedCustomEvent?.link ? (
+                          <p className="calendar-item__details">
+                            {linkedCustomEvent.location ? (
+                              <span className="calendar-item__details-location">{linkedCustomEvent.location}</span>
+                            ) : null}
+                            {linkedCustomEvent.link ? (
+                              <a
+                                className="calendar-item__details-link"
+                                href={linkedCustomEvent.link}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                Open link
+                              </a>
+                            ) : null}
+                          </p>
+                        ) : null}
                       </div>
                     </article>
                   );
@@ -516,25 +612,15 @@ export default function CalendarPage() {
                     ) : (
                       items.map((item) => {
                         const courseName = item.courseId != null ? courseLookup.get(item.courseId) : item.context_name;
-                        const index = item.courseId != null
-                          ? rawCourses.findIndex((course) => course.id === item.courseId)
-                          : -1;
-                        
-                        let color: string;
-                        if (item.source === 'custom') {
-                          // Use custom event color or default to green
-                          const customEvent = calendarItems.find(ci => ci.id === item.id);
-                          color = customEvent?.context_name === 'general' ? '#64748b' :
-                                  customEvent?.context_name === 'personal' ? '#059669' :
-                                  customEvent?.context_name === 'study' ? '#7c3aed' :
-                                  customEvent?.context_name === 'reminder' ? '#dc2626' : '#059669';
-                        } else {
-                          const fallbackColor = index >= 0 ? getCourseColor(item.courseId!, index) : '#64748b';
-                          color = index >= 0 ? courseColors[item.courseId!] ?? fallbackColor : '#64748b';
-                        }
+                        const color = resolveColor(item.courseId, item.customCalendarId);
+                        const linkedCustomEvent = item.source === 'custom' ? customEventMap.get(item.id) : undefined;
+                        const tooltipParts = [item.title];
+                        if (linkedCustomEvent?.location) tooltipParts.push(`Location: ${linkedCustomEvent.location}`);
+                        if (linkedCustomEvent?.link) tooltipParts.push(linkedCustomEvent.link);
+                        const itemTitle = tooltipParts.join(' • ');
                         
                         return (
-                          <div key={item.id} className="calendar-item" title={item.title}>
+                          <div key={item.id} className="calendar-item" title={itemTitle}>
                             <span className="calendar-item__dot" style={{ background: color }} aria-hidden />
                             <div className="calendar-item__content">
                               <span className="calendar-item__title">{item.title}</span>
@@ -570,8 +656,103 @@ export default function CalendarPage() {
           onSubmit={handleCreateEvent}
           initialDate={selectedDate || undefined}
           position={createPopupPosition}
+          calendarOptions={eventCalendarOptions}
+        />
+
+        <CreateCalendarModal
+          isOpen={showCalendarModal}
+          onClose={() => setShowCalendarModal(false)}
+          onSubmit={(data) => {
+            const created = addCustomCalendar(data);
+            setShowCalendarModal(false);
+            setActiveFilters((prev) => {
+              const next = new Set(prev);
+              next.add(`custom-${created.id}`);
+              return Array.from(next);
+            });
+          }}
         />
       </div>
     </AppShell>
+  );
+}
+
+type CreateCalendarModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: { name: string; color: string }) => void;
+};
+
+function CreateCalendarModal({ isOpen, onClose, onSubmit }: CreateCalendarModalProps) {
+  const [name, setName] = useState('');
+  const [color, setColor] = useState(coursePalette[0]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setName('');
+    setColor(coursePalette[0]);
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!name.trim()) return;
+    onSubmit({ name: name.trim(), color });
+  };
+
+  return (
+    <div className="calendar-modal__backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div
+        className="calendar-modal"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3>Create calendar</h3>
+        <form onSubmit={handleSubmit}>
+          <label className="calendar-modal__label">
+            Name
+            <input
+              type="text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Study group"
+              autoFocus
+              required
+            />
+          </label>
+          <div className="calendar-modal__label">
+            <span>Color</span>
+            <div className="calendar-modal__palette">
+              {coursePalette.map((paletteColor) => (
+                <button
+                  key={paletteColor}
+                  type="button"
+                  className={`calendar-color-picker__color${
+                    color === paletteColor ? ' calendar-color-picker__color--active' : ''
+                  }`}
+                  style={{ background: paletteColor }}
+                  onClick={() => setColor(paletteColor)}
+                  aria-label={`Use ${paletteColor} color`}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="calendar-modal__actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Create
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

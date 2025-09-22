@@ -10,6 +10,7 @@ import {
 import type { Assignment, CalendarEvent, Course } from '../../lib/canvasClient';
 import { featureFlags as sharedFeatureFlags } from '../../shared/featureFlags';
 import { useStore } from './store';
+import { useAiUsageStore } from './aiUsage';
 import { getCourseColor } from '../utils/colors';
 
 export type StudyTool = {
@@ -47,20 +48,30 @@ export type DashboardCalendarItem = {
   html_url?: string;
   source: 'event' | 'assignment' | 'custom';
   courseId?: number;
+  customCalendarId?: string;
+  location?: string;
+  link?: string;
+};
+
+export type CustomCalendar = {
+  id: string;
+  name: string;
+  color: string;
 };
 
 export type CustomEvent = {
   id: string;
   title: string;
   start_at: string;
-  category: 'general' | 'personal' | 'study' | 'reminder';
-  color?: string;
+  courseId?: number;
+  customCalendarId?: string;
+  location?: string;
+  link?: string;
 };
 
 type DashboardStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 type DashboardState = {
-  aiTokens: { used: number; limit: number };
   courses: CourseProgress[];
   deadlines: Deadline[];
   recentlyLaunched: StudyTool[];
@@ -69,6 +80,7 @@ type DashboardState = {
   pastAssignments: Assignment[];
   calendarItems: DashboardCalendarItem[];
   customEvents: CustomEvent[];
+  customCalendars: CustomCalendar[];
   featureFlags: { newDashboard: boolean };
   status: DashboardStatus;
   error: string | null;
@@ -79,17 +91,118 @@ type DashboardState = {
   addCustomEvent: (event: Omit<CustomEvent, 'id'>) => void;
   updateCustomEvent: (id: string, updates: Partial<Omit<CustomEvent, 'id'>>) => void;
   deleteCustomEvent: (id: string) => void;
+  addCustomCalendar: (calendar: Omit<CustomCalendar, 'id'>) => CustomCalendar;
+  updateCustomCalendar: (id: string, updates: Partial<Omit<CustomCalendar, 'id'>>) => void;
 };
 
 const progressColorCycle: CourseProgress['color'][] = ['blue', 'green', 'purple'];
 
 // Local storage utilities for custom events
 const CUSTOM_EVENTS_KEY = 'dued8-custom-events';
+const CUSTOM_CALENDARS_KEY = 'dued8-custom-calendars';
+
+const DEFAULT_CUSTOM_CALENDARS: CustomCalendar[] = [
+  { id: 'default-general', name: 'General', color: '#64748b' },
+  { id: 'default-personal', name: 'Personal', color: '#059669' },
+  { id: 'default-study', name: 'Study', color: '#7c3aed' },
+  { id: 'default-reminder', name: 'Reminder', color: '#dc2626' }
+];
+
+function normaliseStoredCalendars(calendars: unknown): CustomCalendar[] {
+  if (!Array.isArray(calendars)) return [];
+  return calendars
+    .map((value) => {
+      if (
+        value &&
+        typeof value === 'object' &&
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        typeof value.color === 'string'
+      ) {
+        return { id: value.id, name: value.name, color: value.color } satisfies CustomCalendar;
+      }
+      return null;
+    })
+    .filter((value): value is CustomCalendar => value != null);
+}
+
+function mergeDefaultCalendars(calendars: CustomCalendar[]): CustomCalendar[] {
+  const existingIds = new Set(calendars.map((calendar) => calendar.id));
+  const merged = [...calendars];
+  DEFAULT_CUSTOM_CALENDARS.forEach((calendar) => {
+    if (!existingIds.has(calendar.id)) {
+      merged.push(calendar);
+    }
+  });
+  return merged;
+}
+
+function loadCustomCalendars(): CustomCalendar[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_CALENDARS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    const normalised = mergeDefaultCalendars(normaliseStoredCalendars(parsed));
+    if (stored == null || normalised.length !== normaliseStoredCalendars(parsed).length) {
+      saveCustomCalendars(normalised);
+    }
+    return normalised;
+  } catch {
+    return [...DEFAULT_CUSTOM_CALENDARS];
+  }
+}
+
+function saveCustomCalendars(calendars: CustomCalendar[]): void {
+  try {
+    localStorage.setItem(CUSTOM_CALENDARS_KEY, JSON.stringify(calendars));
+  } catch {
+    // Silently fail if localStorage is unavailable
+  }
+}
 
 function loadCustomEvents(): CustomEvent[] {
   try {
     const stored = localStorage.getItem(CUSTOM_EVENTS_KEY);
-    return stored ? JSON.parse(stored) : [];
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+
+    const events: CustomEvent[] = [];
+
+    parsed.forEach((value) => {
+      if (!value || typeof value !== 'object') return;
+
+      if ('category' in value && typeof value.category === 'string') {
+        const calendarId = `default-${value.category}`;
+        const legacyEvent: CustomEvent = {
+          id: typeof value.id === 'string' ? value.id : generateEventId(),
+          title: typeof value.title === 'string' ? value.title : 'Untitled event',
+          start_at: typeof value.start_at === 'string' ? value.start_at : new Date().toISOString(),
+          customCalendarId: calendarId,
+          location: typeof value.location === 'string' ? value.location : undefined,
+          link: typeof value.link === 'string' ? value.link : undefined
+        };
+        events.push(legacyEvent);
+        return;
+      }
+
+      const id = typeof value.id === 'string' ? value.id : generateEventId();
+      const title = typeof value.title === 'string' ? value.title : 'Untitled event';
+      const startAt =
+        typeof value.start_at === 'string' ? value.start_at : new Date().toISOString();
+      const courseId =
+        typeof value.courseId === 'number' && Number.isFinite(value.courseId)
+          ? value.courseId
+          : undefined;
+      const customCalendarId =
+        typeof value.customCalendarId === 'string' ? value.customCalendarId : undefined;
+      const location = typeof value.location === 'string' ? value.location : undefined;
+      const link = typeof value.link === 'string' ? value.link : undefined;
+
+      const event: CustomEvent = { id, title, start_at: startAt, courseId, customCalendarId, location, link };
+      events.push(event);
+    });
+
+    return events;
   } catch {
     return [];
   }
@@ -105,6 +218,10 @@ function saveCustomEvents(events: CustomEvent[]): void {
 
 function generateEventId(): string {
   return `custom-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function generateCalendarId(): string {
+  return `calendar-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 function inNextDays(dateString: string | null | undefined, days: number) {
@@ -149,6 +266,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   pastAssignments: [],
   calendarItems: [],
   customEvents: loadCustomEvents(),
+  customCalendars: loadCustomCalendars(),
   featureFlags: { newDashboard: sharedFeatureFlags.newDashboard },
   status: 'idle',
   error: null,
@@ -169,9 +287,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     })),
   addCustomEvent: (eventData) => {
     const newEvent: CustomEvent = {
-      ...eventData,
-      id: generateEventId()
+      id: generateEventId(),
+      ...eventData
     };
+
+    if (newEvent.courseId == null && !newEvent.customCalendarId) {
+      newEvent.customCalendarId = 'default-general';
+    }
+
     set((state) => {
       const newCustomEvents = [...state.customEvents, newEvent];
       saveCustomEvents(newCustomEvents);
@@ -192,6 +315,29 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const newCustomEvents = state.customEvents.filter((event) => event.id !== id);
       saveCustomEvents(newCustomEvents);
       return { customEvents: newCustomEvents };
+    });
+  },
+  addCustomCalendar: (calendarData) => {
+    const newCalendar: CustomCalendar = {
+      id: generateCalendarId(),
+      ...calendarData
+    };
+
+    set((state) => {
+      const customCalendars = mergeDefaultCalendars([...state.customCalendars, newCalendar]);
+      saveCustomCalendars(customCalendars);
+      return { customCalendars };
+    });
+
+    return newCalendar;
+  },
+  updateCustomCalendar: (id, updates) => {
+    set((state) => {
+      const customCalendars = state.customCalendars.map((calendar) =>
+        calendar.id === id ? { ...calendar, ...updates } : calendar
+      );
+      saveCustomCalendars(customCalendars);
+      return { customCalendars };
     });
   },
   ensureData: async ({ force = false } = {}) => {
@@ -352,16 +498,25 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       });
 
       // Add custom events to calendar items
-      const { customEvents } = get();
+      const { customEvents, customCalendars } = get();
+      const customCalendarLookup = new Map(
+        customCalendars.map((calendar) => [calendar.id, calendar.name])
+      );
+
       customEvents.forEach((customEvent) => {
         if (!inNextDays(customEvent.start_at, 30)) return;
         calendarItems.push({
           id: customEvent.id,
           title: customEvent.title,
           start_at: customEvent.start_at,
-          context_name: customEvent.category,
+          context_name: customEvent.customCalendarId
+            ? customCalendarLookup.get(customEvent.customCalendarId)
+            : undefined,
           source: 'custom',
-          courseId: undefined
+          courseId: customEvent.courseId,
+          customCalendarId: customEvent.customCalendarId,
+          location: customEvent.location,
+          link: customEvent.link
         });
       });
 
@@ -415,12 +570,37 @@ export function useDashboardData(options?: { force?: boolean }) {
 
 export function useUser() {
   return useStore((state) => ({
-    name: state.profile?.name ?? 'there'
+    name: state.profile?.name ?? 'there',
+    avatarUrl: state.profile?.avatarUrl ?? null
   }));
 }
 
 export function useAiTokenStore() {
-  return useDashboardStore((state) => state.aiTokens);
+  const plan = useStore((state) => {
+    if (state.profile?.plan) {
+      return state.profile.plan;
+    }
+    if (state.profile?.isPremium) {
+      return 'premium';
+    }
+    return 'free';
+  });
+
+  return useAiUsageStore((state) => {
+    const limit = plan === 'premium' ? state.limits.premium : state.limits.free;
+    const used = state.usageToday;
+    const warningThreshold = state.warningThreshold;
+    const nearingLimit = plan === 'free' && used >= warningThreshold * limit;
+    const overLimit = plan === 'free' && used >= limit;
+    return {
+      used,
+      limit,
+      warningThreshold,
+      nearingLimit,
+      overLimit,
+      tasks: state.tasks
+    };
+  });
 }
 
 export function useCourses() {
@@ -457,20 +637,33 @@ export function usePastAssignments() {
 export function useCalendarItems() {
   const calendarItems = useDashboardStore((state) => state.calendarItems);
   const customEvents = useDashboardStore((state) => state.customEvents);
-  
-  // Merge custom events with calendar items for current display
+  const customCalendars = useDashboardStore((state) => state.customCalendars);
+
   return React.useMemo(() => {
-    const customCalendarItems: DashboardCalendarItem[] = customEvents.map((event) => ({
-      id: event.id,
-      title: event.title,
-      start_at: event.start_at,
-      context_name: event.category,
-      source: 'custom' as const,
-      courseId: undefined
-    }));
-    
-    return [...calendarItems, ...customCalendarItems];
-  }, [calendarItems, customEvents]);
+    const calendarLookup = new Map(customCalendars.map((calendar) => [calendar.id, calendar]));
+    const merged = new Map<string, DashboardCalendarItem>();
+
+    calendarItems.forEach((item) => {
+      merged.set(item.id, { ...item });
+    });
+
+    customEvents.forEach((event) => {
+      const calendar = event.customCalendarId ? calendarLookup.get(event.customCalendarId) : undefined;
+      merged.set(event.id, {
+        id: event.id,
+        title: event.title,
+        start_at: event.start_at,
+        context_name: calendar?.name,
+        source: 'custom',
+        courseId: event.courseId,
+        customCalendarId: event.customCalendarId,
+        location: event.location,
+        link: event.link
+      });
+    });
+
+    return Array.from(merged.values());
+  }, [calendarItems, customEvents, customCalendars]);
 }
 
 export function useCustomEvents() {
@@ -482,6 +675,17 @@ export function useCustomEventActions() {
     addCustomEvent: state.addCustomEvent,
     updateCustomEvent: state.updateCustomEvent,
     deleteCustomEvent: state.deleteCustomEvent
+  }));
+}
+
+export function useCustomCalendars() {
+  return useDashboardStore((state) => state.customCalendars);
+}
+
+export function useCustomCalendarActions() {
+  return useDashboardStore((state) => ({
+    addCustomCalendar: state.addCustomCalendar,
+    updateCustomCalendar: state.updateCustomCalendar
   }));
 }
 

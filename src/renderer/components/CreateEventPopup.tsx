@@ -2,25 +2,30 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { CustomEvent } from '../state/dashboard';
 
+type CalendarOption = {
+  id: string;
+  label: string;
+  color: string;
+  kind: 'course' | 'custom';
+  courseId?: number;
+  customCalendarId?: string;
+};
+
 interface CreateEventPopupProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (event: Omit<CustomEvent, 'id'>) => void;
   initialDate?: string;
   position: { x: number; y: number };
+  calendarOptions: CalendarOption[];
 }
 
-const categories = [
-  { value: 'general', label: 'General', color: '#64748b' },
-  { value: 'personal', label: 'Personal', color: '#059669' },
-  { value: 'study', label: 'Study', color: '#7c3aed' },
-  { value: 'reminder', label: 'Reminder', color: '#dc2626' }
-] as const;
-
-export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDate, position }: CreateEventPopupProps) {
+export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDate, position, calendarOptions }: CreateEventPopupProps) {
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState(initialDate || new Date().toISOString().slice(0, 16));
-  const [category, setCategory] = useState<CustomEvent['category']>('general');
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
+  const [location, setLocation] = useState('');
+  const [link, setLink] = useState('');
   const [isDateTimePickerOpen, setIsDateTimePickerOpen] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -48,23 +53,44 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
     };
   }, [isOpen, onClose, isDateTimePickerOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setTitle('');
+    setLocation('');
+    setLink('');
+    setStartAt(initialDate || new Date().toISOString().slice(0, 16));
+    setSelectedCalendarId((current) => {
+      if (current && calendarOptions.some((option) => option.id === current)) {
+        return current;
+      }
+      return calendarOptions[0]?.id ?? '';
+    });
+  }, [isOpen, initialDate, calendarOptions]);
+
   if (!isOpen) return null;
+
+  const selectedCalendar = calendarOptions.find((option) => option.id === selectedCalendarId);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !selectedCalendar) return;
     
     onSubmit({
       title: title.trim(),
       start_at: startAt,
-      category,
-      color: categories.find(c => c.value === category)?.color || '#64748b'
+      courseId: selectedCalendar.courseId,
+      customCalendarId: selectedCalendar.customCalendarId,
+      location: location.trim() || undefined,
+      link: link.trim() || undefined
     });
     
     // Reset form
     setTitle('');
     setStartAt(initialDate || new Date().toISOString().slice(0, 16));
-    setCategory('general');
+    setSelectedCalendarId(calendarOptions[0]?.id ?? '');
+    setLocation('');
+    setLink('');
     onClose();
   };
 
@@ -128,25 +154,51 @@ export default function CreateEventPopup({ isOpen, onClose, onSubmit, initialDat
         </div>
 
         <div className="form-group">
-          <label>Category</label>
+          <label>Calendar</label>
           <div className="category-grid">
-            {categories.map((cat) => (
-              <button
-                key={cat.value}
-                type="button"
-                className={`category-chip ${category === cat.value ? 'active' : ''}`}
-                onClick={() => setCategory(cat.value)}
-              >
-                <span className="category-color" style={{ background: cat.color }} />
-                {cat.label}
-              </button>
-            ))}
+            {calendarOptions.length ? (
+              calendarOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`category-chip ${selectedCalendarId === option.id ? 'active' : ''}`}
+                  onClick={() => setSelectedCalendarId(option.id)}
+                >
+                  <span className="category-color" style={{ background: option.color }} />
+                  {option.label}
+                </button>
+              ))
+            ) : (
+              <p className="category-empty">Create a calendar to add events.</p>
+            )}
           </div>
+        </div>
+
+        <div className="form-group">
+          <label>Location (optional)</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Library, Zoom, etc."
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Link (optional)</label>
+          <input
+            type="url"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="https://..."
+          />
         </div>
 
         <div className="form-actions">
           <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
-          <button type="submit" className="btn btn-primary">Create</button>
+          <button type="submit" className="btn btn-primary" disabled={!selectedCalendar}>
+            Create
+          </button>
         </div>
       </form>
     </div>,

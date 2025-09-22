@@ -10,6 +10,7 @@ import CourseWorkspace from '../pages/CourseWorkspace';
 import Placeholder from '../pages/Placeholder';
 import AiWriter from '../pages/AiWriter';
 import NoteLibrary from '../pages/NoteLibrary';
+import SettingsPage from '../pages/Settings';
 import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
 
@@ -40,7 +41,7 @@ export function AppRoutes() {
       { path: '/workspace/course', element: <CourseWorkspace /> },
       { path: '/chatbot', element: placeholder('Chatbot') },
       { path: '/pricing', element: placeholder('Upgrade Plan') },
-      { path: '/settings', element: placeholder('Settings') },
+      { path: '/settings', element: <SettingsPage /> },
       { path: '/logout', element: placeholder('Logout') },
       { path: '*', element: <Navigate to={isNewDashboard ? '/dashboard' : '/dashboard/legacy'} /> }
     ],

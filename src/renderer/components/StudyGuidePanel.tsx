@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createSolutionArtifact } from '../utils/assignmentSolution';
 import type { StudyGuidePlan } from '../utils/studyGuide';
 import { convertGuideToMarkdown, markdownToPlainText } from '../utils/studyGuide';
+import AiTokenBadge from './ui/AiTokenBadge';
 
 type GuideStatus = 'idle' | 'generating' | 'ready' | 'error';
 
@@ -11,6 +12,12 @@ type Progress = {
   label: string;
 };
 
+type GuideEstimate = {
+  total: number;
+  contextTokens: number;
+  planTokens: number;
+};
+
 type StudyGuidePanelProps = {
   plan: StudyGuidePlan | null;
   status: GuideStatus;
@@ -18,6 +25,7 @@ type StudyGuidePanelProps = {
   onGenerate: () => void;
   canGenerate: boolean;
   error?: string | null;
+  estimate?: GuideEstimate | null;
 };
 
 type CollapsedState = Record<string, boolean>;
@@ -276,7 +284,8 @@ export default function StudyGuidePanel({
   progress,
   onGenerate,
   canGenerate,
-  error
+  error,
+  estimate
 }: StudyGuidePanelProps) {
   const [collapsed, setCollapsed] = useState<CollapsedState>({});
   const [markdown, setMarkdown] = useState<string>('');
@@ -299,6 +308,7 @@ export default function StudyGuidePanel({
   }, [plan]);
 
   const plainText = useMemo(() => markdownToPlainText(markdown), [markdown]);
+  const tokenEstimate = estimate?.total ?? null;
 
   const toggleSection = (id: string) => {
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -398,6 +408,7 @@ export default function StudyGuidePanel({
               <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
                 {status === 'generating' ? 'Generating…' : 'Generate guide'}
               </button>
+              {tokenEstimate ? <AiTokenBadge category="generate" tokens={tokenEstimate} /> : null}
               {error ? <div className="study-guide-error">{error}</div> : null}
             </div>
           ) : (
@@ -409,6 +420,7 @@ export default function StudyGuidePanel({
                   <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
                     {status === 'generating' ? 'Regenerating…' : 'Regenerate guide'}
                   </button>
+                  {tokenEstimate ? <AiTokenBadge category="generate" tokens={tokenEstimate} /> : null}
                   {status === 'generating' && progress ? (
                     <div className="study-guide-progress">
                       <span>Generating…</span>

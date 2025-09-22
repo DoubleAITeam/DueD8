@@ -6,6 +6,7 @@ export type Profile = {
   primary_email?: string;
   plan?: 'free' | 'premium';
   isPremium?: boolean;
+  avatarUrl?: string | null;
 };
 
 // PHASE 2: Track the active screen so uploads can open a dedicated assignment view.
