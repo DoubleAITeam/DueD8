@@ -2426,11 +2426,23 @@ a:hover {
   padding: 8px 16px;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.18s ease;
+  transition: all 0.18s ease;
+  color: var(--text-primary);
+}
+
+/* Dark mode specific styling for better contrast */
+[data-theme="dark"] .workspace__back {
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border-color: var(--button-primary-bg);
 }
 
 .workspace__back:hover {
-  background: rgba(109, 40, 217, 0.08);
+  background: var(--hover-bg);
+}
+
+[data-theme="dark"] .workspace__back:hover {
+  background: var(--button-primary-hover);
 }
 
 .workspace__summary h2 {
@@ -2464,8 +2476,8 @@ a:hover {
 .workspace__card {
   border-radius: 20px;
   border: 1px solid var(--surface-border);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.1);
+  background: var(--container-bg);
+  box-shadow: var(--container-shadow);
   padding: 24px;
 }
 
@@ -2495,12 +2507,18 @@ a:hover {
 
 .course-workspace__metric {
   border-radius: 16px;
-  border: 1px solid rgba(59, 130, 246, 0.12);
-  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid var(--border-subtle);
+  background: var(--button-secondary-bg);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Dark mode specific styling for better contrast */
+[data-theme="dark"] .course-workspace__metric {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .course-workspace__metric span {
@@ -2510,6 +2528,7 @@ a:hover {
 
 .course-workspace__metric strong {
   font-size: 20px;
+  color: var(--text-primary);
 }
 
 /* AI Writer layout */
