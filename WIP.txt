@@ -12,6 +12,8 @@ Issues to troubleshoot:
 - Chatbot is still too robotic and is programmed for only specific prompts, at least initially.
 - Chatbot is also not very educated on the students' info. (ie "what's my grade in this class?" its response would be to recommend a study guide)
 - Remove "This looks like instructions, not a student deliverable. I will not auto-complete this. Signals were inconclusive for a student deliverable." AND "No model names are shown—just student-friendly guidance." from Assignment Page
+- text too small across app
+- text is messed up in 'Quick Actions' section of dashboard page
 
 Features to be added:
 - Calendar section/page with assignment/event names under each day
