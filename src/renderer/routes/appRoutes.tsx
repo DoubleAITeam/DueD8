@@ -12,6 +12,7 @@ import AiWriter from '../pages/AiWriter';
 import NoteLibrary from '../pages/NoteLibrary';
 import ChatbotPage from '../pages/ChatbotPage';
 import SettingsPage from '../pages/Settings';
+import Analytics from '../pages/Analytics';
 import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
 
@@ -35,7 +36,7 @@ export function AppRoutes() {
       { path: '/study-tools/flashcards', element: placeholder('Flashcards') },
       { path: '/study-tools/quiz-generator', element: placeholder('Quiz Generator') },
       { path: '/grades', element: <GradesPage /> },
-      { path: '/analytics', element: placeholder('Analytics') },
+      { path: '/analytics', element: <Analytics /> },
       { path: '/grades/analytics', element: <Navigate to="/analytics" /> },
       { path: '/calendar', element: <CalendarPage /> },
       { path: '/workspace/assignment', element: <AssignmentWorkspace /> },

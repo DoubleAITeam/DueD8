@@ -2313,6 +2313,57 @@ a:hover {
   font-size: 14px;
 }
 
+.calendar-filter-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.calendar-filter__hide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.calendar-filter__hide:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  opacity: 1;
+}
+
+.calendar-filter__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.calendar-filter__delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  opacity: 1;
+}
+
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -4425,4 +4476,70 @@ a:hover {
 [data-theme="dark"] .ai-token-badge {
   background: rgba(109, 40, 217, 0.22);
   border-color: rgba(165, 180, 252, 0.24);
+}
+
+/* Analytics Responsive Styles */
+@media (max-width: 768px) {
+  .analytics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  
+  .analytics-metrics-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  .analytics-chart svg {
+    width: 100%;
+    height: auto;
+  }
+  
+  .analytics-heatmap {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .analytics-metrics-row {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .analytics-card {
+    padding: 16px !important;
+  }
+  
+  .analytics-chart-title {
+    font-size: 14px !important;
+  }
+}
+
+/* Analytics Accessibility */
+.analytics-chart:focus {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.analytics-tooltip {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  box-shadow: var(--modal-shadow);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .analytics-chart path,
+  .analytics-chart rect,
+  .analytics-chart circle {
+    stroke-width: 2px;
+  }
+  
+  .analytics-legend-item {
+    border: 1px solid var(--text-primary);
+  }
 }
