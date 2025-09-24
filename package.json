@@ -15,7 +15,10 @@
     "test:smoke": "node tests/run-tests.js",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:dmg": "npm run build && electron-builder --mac dmg"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",
@@ -47,5 +50,46 @@
     "vite": "^5.4.10",
     "vitest": "^3.2.4",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.doubleai.dued8",
+    "productName": "DueD8",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "DueD8 Installer",
+      "window": {
+        "width": 600,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 450,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   }
 }
