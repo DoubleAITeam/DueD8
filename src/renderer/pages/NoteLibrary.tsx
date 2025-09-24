@@ -16,7 +16,7 @@ const INPUT_MODES = [
   {
     id: 'text' as const,
     label: 'Typed text',
-    hint: 'Paste notes or write directly to organise them automatically.'
+    hint: 'Paste notes or write directly to organize them automatically.'
   },
   {
     id: 'image' as const,
@@ -498,7 +498,7 @@ export default function NoteLibrary() {
       if (mode === 'text') {
         const trimmed = textInput.trim();
         if (!trimmed) {
-          setError('Add or paste some text before running the AI organiser.');
+          setError('Add or paste some text before running the AI organizer.');
           return;
         }
         const { blocks, analysis } = buildBlocksFromText(trimmed);
@@ -517,7 +517,7 @@ export default function NoteLibrary() {
           analysis.topics.map((topic) => `${topic.heading}: ${topic.detail}`).join('\n')
         ]);
         pendingTask = {
-          label: 'Organise typed notes',
+          label: 'Organize typed notes',
           category: 'summarize',
           steps: [
             { label: 'Interpret text', tokenEstimate: interpretationTokens },
@@ -554,7 +554,7 @@ export default function NoteLibrary() {
           analysis.keyTakeaways.join(' ')
         ]);
         pendingTask = {
-          label: 'OCR & organise image notes',
+          label: 'OCR & organize image notes',
           category: 'parse',
           steps: [
             { label: 'Extract handwriting', tokenEstimate: ocrTokens },
@@ -610,7 +610,7 @@ export default function NoteLibrary() {
           mergedAnalysis.keyTakeaways.join(' ')
         ]);
         pendingTask = {
-          label: 'Transcribe & organise audio notes',
+          label: 'Transcribe & organize audio notes',
           category: 'transcribe',
           steps: [
             { label: 'Transcribe audio', tokenEstimate: transcriptionTokens },
@@ -667,7 +667,7 @@ export default function NoteLibrary() {
           mergedAnalysis.keyTakeaways.join(' ')
         ]);
         pendingTask = {
-          label: 'Transcribe & organise YouTube video',
+          label: 'Transcribe & organize YouTube video',
           category: 'transcribe',
           steps: [
             { label: 'Extract YouTube transcript', tokenEstimate: transcriptionTokens },
@@ -693,7 +693,7 @@ export default function NoteLibrary() {
 
   function handleSaveDraft() {
     if (draftNotes.length === 0) {
-      setError('Organise notes before saving.');
+      setError('Organize notes before saving.');
       return;
     }
 
@@ -722,7 +722,7 @@ export default function NoteLibrary() {
   function quickSaveCurrentText() {
     setError(null);
     if (mode !== 'text') {
-      setError('Quick save is available for typed notes. Use AI organise for uploads.');
+      setError('Quick save is available for typed notes. Use AI organize for uploads.');
       return;
     }
 
@@ -944,12 +944,12 @@ export default function NoteLibrary() {
   }
 
   return (
-    <AppShell pageTitle="AI note library">
+    <AppShell pageTitle="AI Note Library">
       <div className="note-library">
         <section className="dashboard-card note-library__ingest">
           <header className="note-library__header">
             <div>
-              <h2>Upload &amp; organise class notes</h2>
+              <h2>Upload &amp; organize class notes</h2>
               <p>
                 Link raw notes to a class, let the AI clean everything up, then reuse them across flashcards and
                 study plans.
@@ -993,7 +993,7 @@ export default function NoteLibrary() {
                 <textarea
                   id="note-text-input"
                   rows={8}
-                  placeholder="Write or paste the raw notes you captured in class so the AI can organise them."
+                  placeholder="Write or paste the raw notes you captured in class so the AI can organize them."
                   value={textInput}
                   onChange={(event) => setTextInput(event.target.value)}
                 />
@@ -1066,6 +1066,9 @@ export default function NoteLibrary() {
             ) : null}
           </div>
           <div className="note-library__actions">
+            <button type="button" onClick={processInput} disabled={isProcessing}>
+              {isProcessing ? 'Processing…' : 'Organize with AI'}
+            </button>
             <button
               type="button"
               className="note-library__save"
@@ -1073,9 +1076,6 @@ export default function NoteLibrary() {
               disabled={mode !== 'text' || textInput.trim().length === 0 || isProcessing}
             >
               Save
-            </button>
-            <button type="button" onClick={processInput} disabled={isProcessing}>
-              {isProcessing ? 'Processing…' : 'Organise with AI'}
             </button>
             {noteTokenEstimate ? (
               <AiTokenBadge category={noteTokenEstimate.category} tokens={noteTokenEstimate.total} />
