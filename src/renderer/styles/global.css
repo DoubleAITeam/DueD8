@@ -2323,23 +2323,26 @@ a:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: none;
   border-radius: 50%;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  opacity: 0.6;
+  opacity: 0.7;
+  margin-left: 6px;
+  flex-shrink: 0;
 }
 
 .calendar-filter__hide:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: rgba(239, 68, 68, 0.8);
+  color: white;
   opacity: 1;
+  transform: scale(1.1);
 }
 
 .calendar-filter__delete {
