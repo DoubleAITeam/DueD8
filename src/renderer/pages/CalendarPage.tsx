@@ -65,6 +65,14 @@ export default function CalendarPage() {
   const customCalendars = useCustomCalendars();
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [hiddenCategories, setHiddenCategories] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('dued8-hidden-calendar-categories');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [mode, setMode] = useState<'month' | 'week' | 'list'>('month');
   const [colorMenu, setColorMenu] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; date: string } | null>(null);
@@ -141,8 +149,11 @@ export default function CalendarPage() {
       canvasOptions.push({ id: 'canvas-general', label: 'Canvas events', color: '#64748b', kind: 'canvas' });
     }
 
-    return [...courseOptions, ...customCalendarOptions, ...canvasOptions];
-  }, [rawCourses, courseColors, customCalendars, calendarItems]);
+    const allOptions = [...courseOptions, ...customCalendarOptions, ...canvasOptions];
+    
+    // Filter out hidden categories
+    return allOptions.filter(option => !hiddenCategories.includes(option.id));
+  }, [rawCourses, courseColors, customCalendars, calendarItems, hiddenCategories]);
 
   useEffect(() => {
     if (!colorMenu) return;
@@ -341,6 +352,23 @@ export default function CalendarPage() {
         return prev.filter((value) => value !== id);
       }
       return [...prev, id];
+    });
+  }
+
+  function handleToggleCategoryVisibility(id: string) {
+    setHiddenCategories((prev) => {
+      const newHidden = prev.includes(id) 
+        ? prev.filter((value) => value !== id)
+        : [...prev, id];
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('dued8-hidden-calendar-categories', JSON.stringify(newHidden));
+      } catch (error) {
+        console.warn('Failed to save hidden calendar categories:', error);
+      }
+      
+      return newHidden;
     });
   }
 
@@ -556,6 +584,19 @@ export default function CalendarPage() {
                         </div>
                       ) : null}
                     </button>
+                    <button
+                      type="button"
+                      className="calendar-filter__hide"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleToggleCategoryVisibility(option.id);
+                      }}
+                      aria-label={`Hide ${option.label} calendar`}
+                      title={`Hide ${option.label} calendar`}
+                    >
+                      ×
+                    </button>
                     {isCustomCalendarOption && option.customCalendarId && !option.customCalendarId.startsWith('default-') && (
                       <button
                         type="button"
@@ -571,7 +612,7 @@ export default function CalendarPage() {
                         aria-label={`Delete ${option.label} calendar`}
                         title={`Delete ${option.label} calendar`}
                       >
-                        ×
+                        🗑
                       </button>
                     )}
                   </div>
