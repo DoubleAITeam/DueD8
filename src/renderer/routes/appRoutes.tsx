@@ -13,6 +13,7 @@ import NoteLibrary from '../pages/NoteLibrary';
 import ChatbotPage from '../pages/ChatbotPage';
 import SettingsPage from '../pages/Settings';
 import Analytics from '../pages/Analytics';
+import AnalyticsPrototype from '../pages/AnalyticsPrototype';
 import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
 
@@ -37,6 +38,7 @@ export function AppRoutes() {
       { path: '/study-tools/quiz-generator', element: placeholder('Quiz Generator') },
       { path: '/grades', element: <GradesPage /> },
       { path: '/analytics', element: <Analytics /> },
+      { path: '/analytics/prototype', element: <AnalyticsPrototype /> },
       { path: '/grades/analytics', element: <Navigate to="/analytics" /> },
       { path: '/calendar', element: <CalendarPage /> },
       { path: '/workspace/assignment', element: <AssignmentWorkspace /> },

@@ -556,6 +556,19 @@ export default function CalendarPage() {
                         }}
                       />
                       <span>{option.label}</span>
+                      <button
+                        type="button"
+                        className="calendar-filter__hide"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleToggleCategoryVisibility(option.id);
+                        }}
+                        aria-label={`Hide ${option.label} calendar`}
+                        title={`Hide ${option.label} calendar`}
+                      >
+                        ×
+                      </button>
                       {(isCourseOption || isCustomCalendarOption) && colorMenu === option.id ? (
                         <div className="calendar-color-picker" onClick={(event) => event.stopPropagation()}>
                           {coursePalette.map((color) => (
@@ -583,19 +596,6 @@ export default function CalendarPage() {
                           ))}
                         </div>
                       ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="calendar-filter__hide"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        handleToggleCategoryVisibility(option.id);
-                      }}
-                      aria-label={`Hide ${option.label} calendar`}
-                      title={`Hide ${option.label} calendar`}
-                    >
-                      ×
                     </button>
                     {isCustomCalendarOption && option.customCalendarId && !option.customCalendarId.startsWith('default-') && (
                       <button
