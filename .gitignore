@@ -6,3 +6,14 @@ dist-electron
 .DS_Store
 *.log
 out
+
+artifacts/
+playwright-report/
+test-results/
+out/
+dist/
+dist-electron/
+*.log
+.DS_Store
+tests/fixtures/*
+!tests/fixtures/.keep

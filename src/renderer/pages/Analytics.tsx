@@ -1030,25 +1030,16 @@ export default function Analytics() {
             />
           </AnalyticsCard>
 
-          {/* Grade Distribution */}
-          <AnalyticsCard title={selectedFilter === 'all' ? 'Grade Distribution' : 'Progress to Goal'}>
-            <BarChart
-              data={gradeDistribution}
-              formatValue={(value) => selectedFilter === 'all' ? value.toString() : `${value.toFixed(1)}%`}
-              showValues
-              height={200}
+          {/* Assignment Deadline Calendar */}
+          <AnalyticsCard title="Assignment Deadline Calendar">
+            <Heatmap
+              data={assignmentDeadlines}
+              colorScheme="purple"
+              formatValue={(value) => `${value} assignment${value !== 1 ? 's' : ''} due`}
             />
           </AnalyticsCard>
         </div>
 
-        {/* Assignment deadline heatmap */}
-        <AnalyticsCard title="Assignment Deadline Calendar" className="analytics-heatmap">
-          <Heatmap
-            data={assignmentDeadlines}
-            colorScheme="purple"
-            formatValue={(value) => `${value} assignment${value !== 1 ? 's' : ''} due`}
-          />
-        </AnalyticsCard>
 
         {/* ADVANCED ANALYTICS SECTION */}
         <div style={{ 

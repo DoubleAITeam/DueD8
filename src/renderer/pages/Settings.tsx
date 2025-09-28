@@ -9,6 +9,7 @@ import {
 import { UserIcon } from '../components/icons';
 import { useStore } from '../state/store';
 import type { Profile } from '../state/store';
+import { useTheme } from '../context/ThemeContext';
 
 type SectionId =
   | 'notifications'
@@ -62,7 +63,6 @@ export default function SettingsPage() {
   const privacy = useSettingsStore((state) => state.privacy);
   const setNotification = useSettingsStore((state) => state.setNotification);
   const updateProfile = useSettingsStore((state) => state.updateProfile);
-  const setUiThemePreference = useSettingsStore((state) => state.setUiThemePreference);
   const setPrivacy = useSettingsStore((state) => state.setPrivacy);
   const resetSettings = useSettingsStore((state) => state.reset);
   const registerUsername = useSettingsStore((state) => state.registerUsername);
@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const canvasProfile = useStore((state) => state.profile);
   const setAppProfile = useStore((state) => state.setProfile);
   const setToast = useStore((state) => state.setToast);
+  const { setPreference: setThemePreference } = useTheme();
   const canvasName = canvasProfile?.name?.trim() ?? '';
 
   const [sectionVisibility, setSectionVisibility] = useState<Record<SectionId, boolean>>({
@@ -415,7 +416,7 @@ export default function SettingsPage() {
               <select
                 id="themePreference"
                 value={ui.themePreference}
-                onChange={(event) => setUiThemePreference(event.target.value as typeof ui.themePreference)}
+                onChange={(event) => setThemePreference(event.target.value as typeof ui.themePreference)}
                 className="form-input"
               >
                 <option value="light">Light</option>

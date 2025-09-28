@@ -81,7 +81,7 @@ type DashboardState = {
   calendarItems: DashboardCalendarItem[];
   customEvents: CustomEvent[];
   customCalendars: CustomCalendar[];
-  featureFlags: { newDashboard: boolean };
+  featureFlags: { newDashboard: boolean; deliverablesV2: boolean; deliverablesV2Demo: boolean };
   status: DashboardStatus;
   error: string | null;
   ensureData: (options?: { force?: boolean }) => Promise<void>;
@@ -268,7 +268,11 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   calendarItems: [],
   customEvents: loadCustomEvents(),
   customCalendars: loadCustomCalendars(),
-  featureFlags: { newDashboard: sharedFeatureFlags.newDashboard },
+  featureFlags: {
+    newDashboard: sharedFeatureFlags.newDashboard,
+    deliverablesV2: sharedFeatureFlags.deliverablesV2,
+    deliverablesV2Demo: sharedFeatureFlags.deliverablesV2Demo
+  },
   status: 'idle',
   error: null,
   courseColors: {},

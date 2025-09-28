@@ -12,7 +12,8 @@ import {
   SparklesIcon,
   Wand2Icon,
   NotebookIcon,
-  SettingsIcon
+  SettingsIcon,
+  FlashcardIcon
 } from '../icons';
 import { Link, useNavigate } from '../../routes/router';
 import { calculateProgressPercent } from '../../utils/progress';
@@ -37,7 +38,7 @@ const studyTools = [
   { label: 'Chatbot', path: '/chatbot', icon: BrainCircuitIcon },
   { label: 'AI Writer', path: '/study-tools/ai-writer', icon: Wand2Icon },
   { label: 'AI Notes', path: '/study-tools/notes', icon: NotebookIcon },
-  { label: 'Flashcards', path: '/study-tools/flashcards', icon: BookOpenIcon },
+  { label: 'Flashcards', path: '/study-tools/flashcards', icon: FlashcardIcon },
   { label: 'Quiz Generator', path: '/study-tools/quiz-generator', icon: PencilIcon }
 ];
 

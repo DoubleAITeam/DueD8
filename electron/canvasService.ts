@@ -248,3 +248,84 @@ export async function fetchCanvasJson(
 
   return { ok: false, status: lastStatus, error: lastError };
 }
+
+export type CanvasFileDownload = {
+  ok: boolean;
+  status: number;
+  filename?: string;
+  contentType?: string;
+  body?: Buffer;
+  error?: string;
+};
+
+async function fetchCanvasToken(): Promise<string | null> {
+  const token = await getToken();
+  if (!token) {
+    return null;
+  }
+  return token;
+}
+
+export async function downloadCanvasFile(fileId: string): Promise<CanvasFileDownload> {
+  const token = await fetchCanvasToken();
+  if (!token) {
+    return { ok: false, status: 401, error: 'Missing token' };
+  }
+
+  let lastStatus = 0;
+  let lastError = 'Unknown error';
+
+  for (const host of HOSTS) {
+    try {
+      const metaResponse = await fetch(`${host}/api/v1/files/${fileId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json'
+        }
+      });
+      lastStatus = metaResponse.status;
+      if (!metaResponse.ok) {
+        lastError = `${metaResponse.status} ${metaResponse.statusText}`;
+        continue;
+      }
+      const metadata = (await metaResponse.json()) as {
+        display_name?: string;
+        filename?: string;
+        content_type?: string;
+        size?: number;
+        url?: string;
+        download_url?: string;
+      };
+      const downloadUrl = metadata.download_url || metadata.url;
+      if (!downloadUrl) {
+        lastError = 'Missing download URL';
+        continue;
+      }
+      const downloadResponse = await fetch(downloadUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      lastStatus = downloadResponse.status;
+      if (!downloadResponse.ok) {
+        lastError = `${downloadResponse.status} ${downloadResponse.statusText}`;
+        continue;
+      }
+      const arrayBuffer = await downloadResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      return {
+        ok: true,
+        status: downloadResponse.status,
+        filename: metadata.display_name || metadata.filename || `canvas-file-${fileId}`,
+        contentType: downloadResponse.headers.get('content-type') || metadata.content_type || null || undefined,
+        body: buffer
+      };
+    } catch (error) {
+      lastStatus = 0;
+      lastError = (error as Error).message;
+      mainError('downloadCanvasFile failed for host', host, lastError);
+    }
+  }
+
+  return { ok: false, status: lastStatus, error: lastError };
+}

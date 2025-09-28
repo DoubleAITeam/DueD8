@@ -1,11 +1,11 @@
 Working next on:
-- Calendar: allowing user to add their own event (add calendar category: general) 
-- Analytics page
-- Chatbot page
-- Flashcards page
-- Quiz generator page
-- AI-Usage Token tracking
-- Settings page
+- Calendar: allowing user to add their own event (add calendar category: general) (COMPLETED)
+- Analytics page (COMPLETED)
+- Chatbot page (COMPLETED)
+- Flashcards page (COMPLETED)
+- Quiz generator page (COMPLETED - Full Quiz & Exam Maker implemented)
+- AI-Usage Token tracking (COMPLETED)
+- Settings page (COMPLETED)
 
 Issues to troubleshoot:
 - AI deliverables of the assignments have HTML code in them and sometimes state that they're AI generated

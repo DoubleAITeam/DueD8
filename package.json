@@ -24,10 +24,12 @@
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
     "@react-three/rapier": "^2.1.0",
+    "ajv": "^8.17.1",
     "better-sqlite3": "^9.6.0",
     "jszip": "^3.10.1",
     "meshline": "^3.3.1",
     "pdfjs-dist": "^5.4.149",
+    "pdfkit": "^0.17.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.180.0",
@@ -35,6 +37,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@types/better-sqlite3": "^7.6.13",
