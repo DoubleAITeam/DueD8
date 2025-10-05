@@ -1,17 +1,26 @@
 // src/main/ipc.ts
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { getDb } from './db';
 import { clearToken, fetchCanvasJson, getToken, setToken, validateToken } from './canvasService';
 import type { CanvasGetPayload } from './canvasService';
 import type { IpcResult } from '../src/shared/ipc';
-import { mainError, mainLog } from './logger';
+import { mainError, mainLog, mainWarn } from './logger';
+import { readAiResetState } from './ai/state';
 import {
   processAssignmentUploads,
   processRemoteAttachments,
   type ProcessedFile
 } from './fileProcessing';
+import './deliverables/ipc';
+import {
+  getBudgetState,
+  setPlan as setBudgetPlan,
+  setCap as setBudgetCap,
+  resetBudget
+} from './tokenBudget';
 import {
   checkFlashcardQuota,
   createCard as createFlashcardCard,
@@ -32,6 +41,136 @@ import {
 } from './flashcardsService';
 
 ipcMain.handle('ping', () => 'pong');
+
+ipcMain.handle('aiReset:getState', () => readAiResetState());
+
+const PRO_FEATURE_CACHE_TTL = 5 * 60 * 1000;
+const FALLBACK_PRO_FEATURES = [
+  'Longer token limits',
+  'Priority queue',
+  'Multi-file renders',
+  'Export to PDF/Docx',
+  'Audit history'
+];
+
+type ProFeaturesCache = {
+  features: string[];
+  expiresAt: number;
+};
+
+let proFeaturesCache: ProFeaturesCache | null = null;
+
+function sanitizeFeatureCopy(input: string): string {
+  return input
+    .replace(/[*_`~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractProFeatures(raw: string): string[] {
+  const lines = raw.split(/\r?\n/);
+  const results: string[] = [];
+  let inSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const upper = trimmed.toUpperCase();
+    if (upper.startsWith('PRO FEATURES')) {
+      inSection = true;
+      continue;
+    }
+
+    if (upper.startsWith('PRO:')) {
+      const feature = sanitizeFeatureCopy(trimmed.slice(trimmed.indexOf(':') + 1));
+      if (feature) {
+        results.push(feature);
+      }
+      continue;
+    }
+
+    if (inSection) {
+      if (/^[A-Z0-9\s]+:$/u.test(upper) && !upper.startsWith('PRO FEATURES')) {
+        break;
+      }
+      if (trimmed.startsWith('-')) {
+        const feature = sanitizeFeatureCopy(trimmed.replace(/^-+/, ''));
+        if (feature) {
+          results.push(feature);
+        }
+      }
+    }
+  }
+
+  return results.slice(0, 5);
+}
+
+async function readProFeatures(): Promise<string[]> {
+  const now = Date.now();
+  if (proFeaturesCache && proFeaturesCache.expiresAt > now) {
+    return proFeaturesCache.features;
+  }
+
+  try {
+    const wipPath = path.join(app.getAppPath(), 'WIP.txt');
+    const raw = await fs.readFile(wipPath, 'utf-8');
+    const parsed = extractProFeatures(raw);
+    const features = parsed.length ? parsed : FALLBACK_PRO_FEATURES;
+    proFeaturesCache = {
+      features,
+      expiresAt: now + PRO_FEATURE_CACHE_TTL
+    };
+    return features;
+  } catch (error) {
+    mainWarn('wip:getProBullets', 'Failed to read WIP.txt', error);
+    proFeaturesCache = {
+      features: FALLBACK_PRO_FEATURES,
+      expiresAt: now + PRO_FEATURE_CACHE_TTL
+    };
+    return FALLBACK_PRO_FEATURES;
+  }
+}
+
+ipcMain.handle('budget:getState', () => getBudgetState());
+
+ipcMain.handle('budget:setPlan', (_event, plan: string) => {
+  try {
+    setBudgetPlan(plan);
+    return getBudgetState();
+  } catch (error) {
+    mainError('budget:setPlan failed', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('budget:setCap', (_event, cap: number) => {
+  try {
+    const numeric = Number(cap);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      throw new Error('Invalid cap value');
+    }
+    setBudgetCap(numeric);
+    return getBudgetState();
+  } catch (error) {
+    mainError('budget:setCap failed', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('budget:reset', () => {
+  resetBudget();
+  return getBudgetState();
+});
+
+ipcMain.handle('budget:refreshPlan', () => {
+  const plan = process.env.PLAN ?? 'FREE';
+  setBudgetPlan(plan);
+  return getBudgetState();
+});
+
+ipcMain.handle('wip:getProBullets', async () => readProFeatures());
 
 const StudentSchema = z.object({
   first_name: z.string().min(1),

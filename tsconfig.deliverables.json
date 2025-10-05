@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "electron/deliverables/**/*.ts",
+    "electron/preload.ts",
+    "src/types/index.d.ts",
+    "src/renderer/components/deliverables/**/*.tsx",
+    "src/renderer/state/deliverables.ts",
+    "src/renderer/utils/deliverables.ts",
+    "tests/deliverables/**/*.ts",
+    "tests/e2e/**/*.ts"
+  ]
+}

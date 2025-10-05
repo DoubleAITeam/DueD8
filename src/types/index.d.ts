@@ -7,11 +7,69 @@ import type {
   SearchCardsResult,
   SourceAsset
 } from '../shared/flashcards';
+import type { AiResetState } from '../shared/aiConfig';
+import type {
+  ArtifactInput,
+  ArtifactKind,
+  DeliverableLogEntry,
+  DeliverableRunRecord
+} from '../../electron/deliverables/types';
+import type { CourseContext, Rule } from '../../electron/deliverables/postprocess/types';
+import type { AdapterOverviewEntry } from '../../electron/deliverables/renderers/registry';
+import type { ZipResult } from '../../electron/deliverables/archive';
+import type { RetentionConfig, RetentionSweepResult } from '../../electron/deliverables/retention';
+import type { InsightBundle } from '../../electron/deliverables/insights/types';
+import type { BudgetState } from '../../electron/tokenBudget';
 
 export {};
 
 declare global {
   interface Window {
+    electron: {
+      invoke(
+        channel: 'runDeliverablesPipeline',
+        artifacts: ArtifactInput[],
+        options?: { concurrency?: number; dryRun?: boolean; post?: { enable?: boolean; dryRun?: boolean; ctx?: CourseContext } }
+      ): Promise<{ success: boolean; run: DeliverableRunRecord }>;
+      invoke(
+        channel: 'deliverables:runWithPost',
+        artifacts: ArtifactInput[],
+        options?: { concurrency?: number; dryRun?: boolean; post?: { enable?: boolean; dryRun?: boolean; ctx?: CourseContext } }
+      ): Promise<{ success: boolean; run: DeliverableRunRecord }>;
+      invoke(channel: 'deliverables:getRuns', limit?: number): Promise<DeliverableRunRecord[]>;
+      invoke(channel: 'deliverables:resetRuns'): Promise<boolean>;
+      invoke(
+        channel: 'deliverables:getAdapterHealth'
+      ): Promise<Record<ArtifactKind, AdapterOverviewEntry>>;
+      invoke(channel: 'deliverables:getLogs'): Promise<DeliverableLogEntry[]>;
+      invoke(channel: 'deliverables:getRules'): Promise<Rule[]>;
+      invoke(channel: 'deliverables:setRules', rules: Rule[]): Promise<{ ok: boolean; message?: string }>;
+      invoke(channel: 'deliverables:resetRules'): Promise<Rule[]>;
+      invoke(
+        channel: 'deliverables:buildBaseInsights',
+        runId: string,
+        options?: { limit?: number }
+      ): Promise<InsightBundle | null>;
+      invoke(channel: 'deliverables:buildAiInsights', runId: string): Promise<InsightBundle | null>;
+      invoke(channel: 'deliverables:getInsights', runId: string): Promise<InsightBundle | null>;
+      invoke(
+        channel: 'deliverables:saveInsightCorrection',
+        runId: string,
+        artifactId: string,
+        patch: { title?: string; detectedCourseId?: string; detectedAssignmentId?: string }
+      ): Promise<InsightBundle | null>;
+      invoke(channel: 'deliverables:isAiInsightsEnabled'): Promise<boolean>;
+      invoke(
+        channel: 'deliverables:getInsightRedactionInfo'
+      ): Promise<{ enabled: boolean; patterns: string[] }>;
+      invoke(channel: 'deliverables:revealInFolder', targetPath: string): Promise<boolean>;
+      invoke(channel: 'deliverables:openPath', targetPath: string): Promise<{ ok: boolean; message?: string }>;
+      invoke(channel: 'deliverables:moveToTrash', targetPath: string): Promise<{ ok: boolean; message?: string }>;
+      invoke(channel: 'deliverables:zipRun', runId: string): Promise<ZipResult>;
+      invoke(channel: 'deliverables:zipArtifacts', runId: string, artifactIds: string[]): Promise<ZipResult>;
+      invoke(channel: 'deliverables:sweepOldOutputs', config?: RetentionConfig): Promise<RetentionSweepResult>;
+      invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
+    };
     dued8: {
       ping(): Promise<string>;
       canvas: {
@@ -87,6 +145,37 @@ declare global {
           check(userId: string): Promise<IpcResult<FlashcardQuotaInfo>>;
           increment(userId: string, amount: number): Promise<IpcResult<FlashcardQuotaInfo>>;
         };
+      };
+      deliverables: {
+        revealInFolder(targetPath: string): Promise<boolean>;
+        openPath(targetPath: string): Promise<{ ok: boolean; message?: string }>;
+        moveToTrash(targetPath: string): Promise<{ ok: boolean; message?: string }>;
+        zipRun(runId: string): Promise<ZipResult>;
+        zipArtifacts(runId: string, artifactIds: string[]): Promise<ZipResult>;
+        sweepOldOutputs(config?: RetentionConfig): Promise<RetentionSweepResult>;
+        buildBaseInsights(runId: string, options?: { limit?: number }): Promise<InsightBundle | null>;
+        buildAiInsights(runId: string): Promise<InsightBundle | null>;
+        getInsights(runId: string): Promise<InsightBundle | null>;
+        saveInsightCorrection(
+          runId: string,
+          artifactId: string,
+          patch: { title?: string; detectedCourseId?: string; detectedAssignmentId?: string }
+        ): Promise<InsightBundle | null>;
+        isAiInsightsEnabled(): Promise<boolean>;
+        getInsightRedactionInfo(): Promise<{ enabled: boolean; patterns: string[] }>;
+      };
+      aiReset: {
+        getState(): Promise<AiResetState>;
+      };
+      budget: {
+        getState(): Promise<BudgetState>;
+        setPlan(plan: string): Promise<BudgetState>;
+        setCap(cap: number): Promise<BudgetState>;
+        reset(): Promise<BudgetState>;
+        refreshPlan(): Promise<BudgetState>;
+        getProBullets(): Promise<string[]>;
+        onChanged(listener: (state: BudgetState) => void): () => void;
+        onBlocked(listener: (state: BudgetState) => void): () => void;
       };
     };
   }

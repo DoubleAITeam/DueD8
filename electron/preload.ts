@@ -1,7 +1,55 @@
 // electron/preload.ts
 import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  ArtifactInput,
+  ArtifactKind,
+  DeliverableLogEntry,
+  DeliverableRunRecord
+} from './deliverables/types';
+import type { CourseContext, Rule } from './deliverables/postprocess/types';
+import type { ZipResult } from './deliverables/archive';
+import type { RetentionConfig, RetentionSweepResult } from './deliverables/retention';
+
+type PipelineInvokeOptions = {
+  concurrency?: number;
+  dryRun?: boolean;
+  post?: { enable?: boolean; dryRun?: boolean; ctx?: CourseContext };
+};
+
+type ElectronInvoke = {
+  (
+    channel: 'runDeliverablesPipeline',
+    artifacts: ArtifactInput[],
+    options?: PipelineInvokeOptions
+  ): Promise<{ success: boolean; run: DeliverableRunRecord }>;
+  (
+    channel: 'deliverables:runWithPost',
+    artifacts: ArtifactInput[],
+    options?: PipelineInvokeOptions
+  ): Promise<{ success: boolean; run: DeliverableRunRecord }>;
+  (channel: 'deliverables:getRuns', limit?: number): Promise<DeliverableRunRecord[]>;
+  (channel: 'deliverables:resetRuns'): Promise<boolean>;
+  (
+    channel: 'deliverables:getAdapterHealth'
+  ): Promise<Record<ArtifactKind, { adapterId: string; ok: boolean; message?: string; reason: string }>>;
+  (channel: 'deliverables:getLogs'): Promise<DeliverableLogEntry[]>;
+  (channel: 'deliverables:getRules'): Promise<Rule[]>;
+  (
+    channel: 'deliverables:setRules',
+    rules: Rule[]
+  ): Promise<{ ok: boolean; message?: string }>;
+  (channel: 'deliverables:resetRules'): Promise<Rule[]>;
+  <T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
+};
+
+const invoke: ElectronInvoke = ((channel: string, ...args: unknown[]) =>
+  ipcRenderer.invoke(channel, ...args)) as ElectronInvoke;
 
 console.log('[preload] loaded');
+
+contextBridge.exposeInMainWorld('electron', {
+  invoke
+});
 
 contextBridge.exposeInMainWorld('dued8', {
   ping: () => ipcRenderer.invoke('ping'),
@@ -91,6 +139,53 @@ contextBridge.exposeInMainWorld('dued8', {
       check: (userId: string) => ipcRenderer.invoke('flashcards:quota:check', { userId }),
       increment: (userId: string, amount: number) =>
         ipcRenderer.invoke('flashcards:quota:increment', { userId, amount })
+    }
+  },
+
+  aiReset: {
+    getState: () => ipcRenderer.invoke('aiReset:getState')
+  },
+
+  deliverables: {
+    revealInFolder: (targetPath: string) =>
+      ipcRenderer.invoke('deliverables:revealInFolder', targetPath) as Promise<boolean>,
+    openPath: (targetPath: string) =>
+      ipcRenderer.invoke('deliverables:openPath', targetPath) as Promise<{ ok: boolean; message?: string }>,
+    moveToTrash: (targetPath: string) =>
+      ipcRenderer.invoke('deliverables:moveToTrash', targetPath) as Promise<{ ok: boolean; message?: string }>,
+    zipRun: (runId: string) => ipcRenderer.invoke('deliverables:zipRun', runId) as Promise<ZipResult>,
+    zipArtifacts: (runId: string, artifactIds: string[]) =>
+      ipcRenderer.invoke('deliverables:zipArtifacts', runId, artifactIds) as Promise<ZipResult>,
+    sweepOldOutputs: (config?: RetentionConfig) =>
+      ipcRenderer.invoke('deliverables:sweepOldOutputs', config) as Promise<RetentionSweepResult>,
+    buildBaseInsights: (runId: string, options?: { limit?: number }) =>
+      ipcRenderer.invoke('deliverables:buildBaseInsights', runId, options),
+    buildAiInsights: (runId: string) => ipcRenderer.invoke('deliverables:buildAiInsights', runId),
+    getInsights: (runId: string) => ipcRenderer.invoke('deliverables:getInsights', runId),
+    saveInsightCorrection: (
+      runId: string,
+      artifactId: string,
+      patch: { title?: string; detectedCourseId?: string; detectedAssignmentId?: string }
+    ) => ipcRenderer.invoke('deliverables:saveInsightCorrection', runId, artifactId, patch),
+    isAiInsightsEnabled: () => ipcRenderer.invoke('deliverables:isAiInsightsEnabled'),
+    getInsightRedactionInfo: () => ipcRenderer.invoke('deliverables:getInsightRedactionInfo')
+  },
+  budget: {
+    getState: () => ipcRenderer.invoke('budget:getState'),
+    setPlan: (plan: string) => ipcRenderer.invoke('budget:setPlan', plan),
+    setCap: (cap: number) => ipcRenderer.invoke('budget:setCap', cap),
+    reset: () => ipcRenderer.invoke('budget:reset'),
+    refreshPlan: () => ipcRenderer.invoke('budget:refreshPlan'),
+    getProBullets: () => ipcRenderer.invoke('wip:getProBullets'),
+    onChanged: (listener: (state: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+      ipcRenderer.on('budget:changed', handler);
+      return () => ipcRenderer.removeListener('budget:changed', handler);
+    },
+    onBlocked: (listener: (state: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+      ipcRenderer.on('budget:blocked', handler);
+      return () => ipcRenderer.removeListener('budget:blocked', handler);
     }
   }
 });

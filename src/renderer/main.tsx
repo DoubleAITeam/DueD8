@@ -7,6 +7,10 @@ import { AppRoutes } from './routes/appRoutes';
 import type { Profile } from './state/store';
 import { useStore } from './state/store';
 import { ThemeProvider } from './context/ThemeContext';
+import { UpgradeModal } from './components/modals/UpgradeModal';
+import { bootstrapBudgetState } from './state/budget';
+import { AI_ACTIVE_BADGE, AI_RESET_BANNER_MESSAGE, isAiActionBlocked } from '../shared/aiConfig';
+import type { AiResetState } from '../shared/aiConfig';
 
 const platformBridge = getPlatformBridge();
 // PHASE 1: Load the refreshed font stack and palette for the renderer.
@@ -49,13 +53,32 @@ function Root() {
   const setConnected = useStore((s) => s.setConnected);
   const setProfile = useStore((s) => s.setProfile);
   const setToast = useStore((s) => s.setToast);
+  const setAiResetState = useStore((s) => s.setAiResetState);
+  const aiResetState = useStore((s) => s.aiResetState);
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    let pollHandle: number | null = null;
+
+    async function refreshAiState() {
+      try {
+        const state = await platformBridge.aiReset.getState();
+        if (!cancelled) {
+          setAiResetState(state ?? null);
+        }
+      } catch (error) {
+        rendererError('Failed to load AI reset state', error);
+      }
+    }
 
     async function bootstrap() {
       try {
+        await bootstrapBudgetState();
+        await refreshAiState();
+        pollHandle = window.setInterval(() => {
+          void refreshAiState();
+        }, 15000);
         const tokenResult = await platformBridge.canvas.getToken();
         if (!tokenResult.ok) {
           rendererError('Failed to read stored token', tokenResult.error);
@@ -91,8 +114,11 @@ function Root() {
 
     return () => {
       cancelled = true;
+      if (pollHandle) {
+        window.clearInterval(pollHandle);
+      }
     };
-  }, [setConnected, setProfile, setToast]);
+  }, [setAiResetState, setConnected, setProfile, setToast]);
 
   if (initializing) {
     return (
@@ -114,9 +140,29 @@ function Root() {
 
   return (
     <>
+      <AiResetNotice state={aiResetState} />
       {connected ? <AppRoutes /> : <ConnectCanvas />}
       <Toast />
+      <UpgradeModal />
     </>
+  );
+}
+
+function AiResetNotice({ state }: { state: AiResetState | null }) {
+  if (!state) {
+    return null;
+  }
+  if (isAiActionBlocked(state)) {
+    return (
+      <div className="ai-reset-banner">
+        {state.bannerMessage || AI_RESET_BANNER_MESSAGE}
+      </div>
+    );
+  }
+  return (
+    <div className="ai-reset-badge" role="status" aria-live="polite">
+      {AI_ACTIVE_BADGE}
+    </div>
   );
 }
 

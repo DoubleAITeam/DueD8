@@ -1,0 +1,7 @@
+Summarise deliverable run {{RUN_ID}} for a status email.
+Timeline: {{TIMELINE}}
+Totals: {{TOTALS}}
+By type: {{BY_TYPE}}
+Fallback count: {{FALLBACK_COUNT}}
+Highlights: {{HIGHLIGHTS}}
+Results sample: {{RESULTS_SAMPLE}}

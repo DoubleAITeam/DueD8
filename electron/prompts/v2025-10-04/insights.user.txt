@@ -1,0 +1,9 @@
+Artifact ID: {{ARTIFACT_ID}}
+Title: {{TITLE}}
+Course Guess: {{COURSE_GUESS}}
+Assignment Guess: {{ASSIGNMENT_GUESS}}
+Keywords: {{KEYWORDS}}
+Warnings: {{WARNINGS}}
+Redaction: {{REDACTION_STATE}}
+Excerpt:
+{{EXCERPT}}

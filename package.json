@@ -12,10 +12,27 @@
     "build": "electron-vite -c electron.vite.config.mts build",
     "preview": "electron-vite -c electron.vite.config.mts preview",
     "test": "npm-run-all test:smoke test:unit",
-    "test:smoke": "node tests/run-tests.js",
+    "test:smoke": "npm-run-all test:smoke:legacy test:smoke:e2e",
     "test:unit": "vitest run",
+    "test:summary": "vitest run tests/deliverables/summary.*.test.ts tests/deliverables/report.*.test.ts tests/deliverables/ipc.summary.test.ts",
+    "test:adapters": "vitest run tests/deliverables/adapters.*.test.ts",
+    "typecheck": "npm run typecheck:deliverables",
+    "typecheck:deliverables": "tsc -p tsconfig.deliverables.json --noEmit",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "docs:api": "node scripts/run-generateDocs.js",
+    "deliverables:run": "node bin/deliverables.js run",
+    "deliverables:summary": "node bin/deliverables.js summary",
+    "deliverables:insights": "node bin/deliverables.js insights",
+    "deliverables:archive": "node bin/deliverables.js archive",
+    "deliverables:sweep": "node bin/deliverables.js sweep",
+    "test:smoke:legacy": "node tests/run-tests.js",
+    "test:smoke:e2e": "TS_PROJECT=tsconfig.deliverables.json node scripts/run-ts.js tests/e2e/smoke.test.ts",
+    "lint": "node scripts/run-eslint.js --ext .ts electron/deliverables scripts tests",
+    "ci:deliverables": "npm-run-all lint typecheck:deliverables test:smoke",
+    "typecheck:strict": "tsc -p tsconfig.deliverables.json --noEmit --strict",
+    "version": "node scripts/run-updateChangelog.js",
+    "codex:ai-reset": "TS_PROJECT=tsconfig.deliverables.json node scripts/run-ts.js electron/codex/aiReset.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",
@@ -46,6 +63,9 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^3.2.4",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "eslint": "^9.13.0",
+    "@typescript-eslint/parser": "^8.12.2",
+    "@typescript-eslint/eslint-plugin": "^8.12.2"
   }
 }

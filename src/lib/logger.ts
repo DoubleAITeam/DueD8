@@ -11,3 +11,10 @@ export function rendererLog(...args: unknown[]) {
 export function rendererError(...args: unknown[]) {
   console.error('[renderer]', ...args);
 }
+
+/**
+ * Structured analytics logging for the renderer process.
+ */
+export function rendererAnalytics(event: string, payload: Record<string, unknown> = {}): void {
+  rendererLog('[analytics]', event, payload);
+}
