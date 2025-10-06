@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { normalizeWhitespace } from '../utils/common';
 
 const RESERVED_USERNAMES = ['admin', 'support', 'demo', 'team', 'dued8'];
 const USERNAME_SUFFIX_LENGTH = 3;

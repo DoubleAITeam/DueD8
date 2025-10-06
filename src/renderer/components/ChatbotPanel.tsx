@@ -5,6 +5,8 @@ import { useStore } from '../state/store';
 import { featureFlags } from '../../shared/featureFlags';
 import { deriveCourseGrade } from '../../lib/gradeUtils';
 import { useAiUsageStore, estimateTokensFromText } from '../state/aiUsage';
+import { formatTimestamp, truncateText, normalizeWhitespace } from '../utils/common';
+import { STUDY_GUIDE_DEFAULTS } from '../utils/constants';
 import AiTokenBadge from './ui/AiTokenBadge';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -21,26 +23,20 @@ type Props = {
   courseLookup: Record<number, string>;
 };
 
-function formatAssignmentsSummary(assignments: Assignment[], courseLookup: Record<number, string>) {
-  if (!assignments.length) {
-    return 'No upcoming deadlines recorded in the current window.';
-  }
-  return assignments.slice(0, 3).map((assignment) => {
-    const due = assignment.due_at ? new Date(assignment.due_at).toLocaleString() : 'No due date provided';
+// Shortened utility functions using common utilities
+const formatAssignmentsSummary = (assignments: Assignment[], courseLookup: Record<number, string>) =>
+  assignments.length === 0 ? 'No upcoming deadlines recorded in the current window.' :
+  assignments.slice(0, 3).map(assignment => {
+    const due = assignment.due_at ? formatTimestamp(assignment.due_at) : 'No due date provided';
     const courseName = courseLookup[assignment.course_id] ?? 'Unknown course';
     return `• ${assignment.name} (${courseName}) — due ${due}`;
   }).join('\n');
-}
 
-function summarizeContexts(contexts: AssignmentContextEntry[]) {
-  if (!contexts.length) {
-    return 'No supporting documents uploaded yet.';
-  }
-  return contexts.slice(-3).map((entry) => {
-    const snippet = entry.content.length > 160 ? `${entry.content.slice(0, 160)}…` : entry.content;
-    return `• ${entry.fileName}: ${snippet}`;
-  }).join('\n');
-}
+const summarizeContexts = (contexts: AssignmentContextEntry[]) =>
+  contexts.length === 0 ? 'No supporting documents uploaded yet.' :
+  contexts.slice(-3).map(entry => 
+    `• ${entry.fileName}: ${truncateText(entry.content, 160)}`
+  ).join('\n');
 
 const GREETING_KEYWORDS = new Set([
   'hi',
@@ -160,25 +156,27 @@ function summariseStudentProfile(profile: StudentProfile) {
   return `Here’s what I noted about you:\n${lines.join('\n')}`;
 }
 
+// Shortened and properly typed grade ranking
+type RankedCourse = { course: Course; display: string; scoreValue: number | null };
+
 function rankCourseGrades(
   courses: Course[],
   comparator: (candidate: number | null, currentBest: number | null) => boolean
-) {
-  let selected: { course: Course; display: string; scoreValue: number | null } | null = null;
-  courses.forEach((course) => {
+): RankedCourse | null {
+  let selected: RankedCourse | null = null;
+  
+  for (const course of courses) {
     const summary = deriveCourseGrade(course);
-    if (summary.status !== 'complete') return;
+    if (summary.status !== 'complete') continue;
+    
     const score = typeof summary.score === 'number' ? summary.score : letterToScore(summary.grade);
     const scoreValue = typeof score === 'number' && !Number.isNaN(score) ? score : null;
-    const display = summary.display;
-    if (!selected) {
-      selected = { course, display, scoreValue };
-      return;
+    const candidate: RankedCourse = { course, display: summary.display, scoreValue };
+    
+    if (!selected || comparator(scoreValue, selected.scoreValue)) {
+      selected = candidate;
     }
-    if (comparator(scoreValue, selected.scoreValue)) {
-      selected = { course, display, scoreValue };
-    }
-  });
+  }
   return selected;
 }
 

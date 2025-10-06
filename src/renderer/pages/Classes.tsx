@@ -56,7 +56,6 @@ export default function ClassesPage() {
                     <header className="class-card__header">
                       <div>
                         <h3>{course.name}</h3>
-                        <p>{course.course_code ?? 'No course code provided'}</p>
                       </div>
                       <div className={`class-card__grade class-card__grade--${grade.status}`}>
                         <span className="class-card__grade-label">Current grade</span>

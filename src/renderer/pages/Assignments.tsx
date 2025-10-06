@@ -9,6 +9,7 @@ import {
 } from '../state/dashboard';
 import { useStore } from '../state/store';
 import { useNavigate } from '../routes/router';
+import { createLookup } from '../utils/common';
 import type { Assignment } from '../../lib/canvasClient';
 
 function groupAssignments(assignments: Assignment[], courseId: number | 'all') {
@@ -27,11 +28,7 @@ export default function AssignmentsPage() {
   const [filterCourse, setFilterCourse] = useState<'all' | number>('all');
 
   const courseLookup = useMemo(
-    () =>
-      rawCourses.reduce<Record<number, string>>((acc, course) => {
-        acc[course.id] = course.course_code || course.name;
-        return acc;
-      }, {}),
+    () => createLookup(rawCourses, 'id', (course) => course.course_code || course.name),
     [rawCourses]
   );
 

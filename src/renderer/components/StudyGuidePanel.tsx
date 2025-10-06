@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createSolutionArtifact } from '../utils/assignmentSolution';
 import type { StudyGuidePlan } from '../utils/studyGuide';
 import { convertGuideToMarkdown, markdownToPlainText } from '../utils/studyGuide';
+import { escapeHtml } from '../utils/common';
 import AiTokenBadge from './ui/AiTokenBadge';
 
 type GuideStatus = 'idle' | 'generating' | 'ready' | 'error';
@@ -43,12 +44,7 @@ type MarkdownBlockProps = {
   markdown: string;
 };
 
-function escapeHtml(input: string) {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+// Removed local escapeHtml function - now using utility
 
 function formatInline(text: string) {
   let formatted = escapeHtml(text);

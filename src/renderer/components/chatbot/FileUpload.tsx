@@ -28,13 +28,14 @@ export default function FileUpload({ onFileUpload }: FileUploadProps) {
 
   return (
     <div className="file-upload-area">
+      <label>Attach Files</label>
       <button
         type="button"
         className="file-upload-btn"
         onClick={handleClick}
         title="Upload files (PDF, DOC, DOCX, TXT, RTF)"
       >
-        <PaperclipIcon size={16} />
+        <PaperclipIcon size={18} />
         Upload Files
       </button>
       <input

@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
+import { normalizeWhitespace, toTitleCase, formatTimestamp, truncateText } from '../utils/common';
+import { DATE_FORMATS, MIN_WORD_LENGTH, ANALYSIS_THRESHOLDS } from '../utils/constants';
 import { useRawCourses } from '../state/dashboard';
 import {
   GENERAL_NOTE_CLASS_ID,
@@ -46,92 +48,51 @@ type DraftAnalysis = {
   suggestedTitle?: string;
 };
 
-const timestampFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit'
-});
+const timestampFormatter = new Intl.DateTimeFormat(undefined, DATE_FORMATS.MEDIUM);
 
-function toTitleCase(value: string): string {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((token) => token[0]?.toUpperCase() + token.slice(1).toLowerCase())
-    .join(' ');
-}
+// Removed local utility functions - using common utilities
 
+// Keep this specialized function as it has different logic than the common normalizeWhitespace
 function normaliseWhitespace(value: string): string {
   return value.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n');
 }
 
-function summariseBlock(block: string): string {
+// Shortened using common utilities
+const summariseBlock = (block: string): string => {
   const sentences = block.split(/(?<=[.!?])\s+/).filter(Boolean);
-  if (sentences.length > 0) {
-    const compact = sentences[0];
-    const words = compact.split(/\s+/);
-    if (words.length > 16) {
-      return `${words.slice(0, 16).join(' ')}…`;
-    }
-    return compact;
-  }
-
-  const words = block.split(/\s+/);
-  return words.length > 16 ? `${words.slice(0, 16).join(' ')}…` : block;
+  const source = sentences.length > 0 ? sentences[0] : block;
+  return truncateText(source, 80); // Use common truncate utility
 }
 
-function deriveTitleFromText(text: string | undefined): string | undefined {
-  if (!text) return undefined;
-  const cleaned = text.trim();
-  if (!cleaned) return undefined;
-  const words = cleaned.split(/\s+/);
-  if (words.length === 0) return undefined;
-  const preview = words.slice(0, 7).join(' ');
-  return words.length > 7 ? `${preview}…` : preview;
-}
+const deriveTitleFromText = (text?: string): string | undefined => 
+  text ? truncateText(text.trim(), 35) : undefined;
 
-function analyseBlocks(blocks: string[], original: string): DraftAnalysis {
+// Shortened analysis function
+const analyseBlocks = (blocks: string[], original: string): DraftAnalysis => {
   const numbers = new Set<string>();
-  const topics: Array<{ heading: string; detail: string }> = [];
-  const keyTakeaways: string[] = [];
-
-  blocks.forEach((block, index) => {
+  const topics = blocks.map((block, index) => {
     const trimmed = block.trim();
-    if (!trimmed) return;
-    trimmed.replace(/\b\d+(?:[.,]\d+)?\b/g, (match) => {
-      numbers.add(match);
-      return match;
-    });
-    trimmed.replace(
-      /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(?:\d{1,2})(?:,\s*\d{2,4})?/gi,
-      (match) => {
-        numbers.add(match);
-        return match;
-      }
-    );
-
+    if (!trimmed) return null;
+    
+    // Extract numbers and dates
+    trimmed.match(/\b\d+(?:[.,]\d+)?\b/g)?.forEach(match => numbers.add(match));
+    trimmed.match(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(?:\d{1,2})(?:,\s*\d{2,4})?/gi)?.forEach(match => numbers.add(match));
+    
+    // Parse heading or use section number
     const headingMatch = trimmed.match(/^(.*?)(?:[:–-]|\u2014)\s+(.+)/);
-    if (headingMatch) {
-      topics.push({ heading: headingMatch[1].trim(), detail: headingMatch[2].trim() });
-    } else {
-      topics.push({ heading: `Section ${index + 1}`, detail: trimmed });
-    }
-
-    if (keyTakeaways.length < 5) {
-      keyTakeaways.push(summariseBlock(trimmed));
-    }
-  });
-
-  const dedupedTakeaways = Array.from(new Set(keyTakeaways));
+    return headingMatch 
+      ? { heading: headingMatch[1].trim(), detail: headingMatch[2].trim() }
+      : { heading: `Section ${index + 1}`, detail: trimmed };
+  }).filter(Boolean) as Array<{ heading: string; detail: string }>;
 
   return {
-    keyTakeaways: dedupedTakeaways,
+    keyTakeaways: [...new Set(blocks.slice(0, 5).map(summariseBlock))],
     topics,
     numbers: Array.from(numbers),
     rawText: original,
     suggestedTitle: deriveTitleFromText(blocks[0])
   };
-}
+};
 
 function buildBlocksFromText(input: string): { blocks: string[]; analysis: DraftAnalysis } {
   const normalised = normaliseWhitespace(input).trim();

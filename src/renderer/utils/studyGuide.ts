@@ -1,4 +1,5 @@
 import type { AssignmentContextEntry } from '../state/store';
+import { normalizeWhitespace, truncateText } from './common';
 
 export type GuideSection = {
   id: string;
@@ -6,29 +7,22 @@ export type GuideSection = {
   body: string;
 };
 
+// PHASE 1: Generate study guides that incorporate uploaded content.
+
 export type StudyGuidePlan = {
   heading: string;
   overview: string;
   sections: GuideSection[];
 };
 
-function normaliseSnippet(input: string, length: number) {
-  const flattened = input.replace(/\s+/g, ' ').trim();
-  if (!flattened.length) {
-    return '';
-  }
-  if (flattened.length <= length) {
-    return flattened;
-  }
-  return `${flattened.slice(0, length).trimEnd()}…`;
-}
+// Using truncateText from common utilities instead of local normaliseSnippet
 
 function buildContextBullets(entries: AssignmentContextEntry[]) {
   if (!entries.length) {
     return ['No uploaded context detected yet. Gather rubrics, notes, or research excerpts before drafting.'];
   }
   return entries.slice(0, 6).map((entry) => {
-    const snippet = normaliseSnippet(entry.content, 220);
+    const snippet = truncateText(entry.content, 220);
     return `• **${entry.fileName}** — ${snippet || 'High-level summary unavailable; skim the document for must-have details.'}`;
   });
 }
@@ -54,7 +48,7 @@ function buildTopicOutline(entries: AssignmentContextEntry[], courseName?: strin
   const baseTopics = entries.slice(0, 4);
   if (baseTopics.length) {
     baseTopics.forEach((entry, index) => {
-      const snippet = normaliseSnippet(entry.content, 140);
+      const snippet = truncateText(entry.content, 140);
       topics.push(`- **Topic ${index + 1}:** Anchor your notes in “${entry.fileName}”. ${snippet}`);
     });
   } else {
@@ -137,7 +131,7 @@ function buildReferences(entries: AssignmentContextEntry[]) {
     return ['No uploaded files referenced yet. Add instructor rubrics or your research notes for richer guidance.'];
   }
   return entries.map((entry) => {
-    const snippet = normaliseSnippet(entry.content, 180);
+    const snippet = truncateText(entry.content, 180);
     return `- **${entry.fileName}** — added ${new Date(entry.uploadedAt).toLocaleDateString()}\n  - Notes: ${snippet || 'Review this file for specific page numbers or data to cite.'}`;
   });
 }

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
 import AiTokenBadge from '../components/ui/AiTokenBadge';
 import { useAiUsageStore, estimateTokensFromText, estimateTokensFromTexts } from '../state/aiUsage';
+import { createId, normalizeWhitespace, countWords, splitParagraphs, splitSentences, formatTimestamp, uniqueBy } from '../utils/common';
+import { STOP_WORDS, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE } from '../utils/constants';
 
 type DocumentCategory = 'draft' | 'rubric' | 'instructions' | 'notes' | 'research' | 'other';
 
@@ -69,74 +71,7 @@ type DraftInsight = {
   sentences: string[];
 };
 
-const STOP_WORDS = new Set([
-  'the',
-  'and',
-  'that',
-  'this',
-  'with',
-  'from',
-  'have',
-  'will',
-  'would',
-  'could',
-  'should',
-  'might',
-  'about',
-  'after',
-  'before',
-  'because',
-  'into',
-  'through',
-  'which',
-  'their',
-  'there',
-  'these',
-  'those',
-  'been',
-  'being',
-  'were',
-  'where',
-  'your',
-  'yours',
-  'they',
-  'them',
-  'than',
-  'when',
-  'then',
-  'such',
-  'while'
-]);
-
 let pdfWorkerConfigured = false;
-
-function createId(prefix = 'id'): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
-}
-
-function normaliseWhitespace(value: string): string {
-  return value.replace(/\r\n?/g, '\n');
-}
-
-function countWords(content: string): number {
-  const trimmed = content.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).filter(Boolean).length;
-}
-
-function splitParagraphs(content: string): string[] {
-  return normaliseWhitespace(content)
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-}
-
-function splitSentences(content: string): string[] {
-  return normaliseWhitespace(content)
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
 
 function detectCategory(fileName: string, content: string): DocumentCategory {
   const lowerName = fileName.toLowerCase();
@@ -166,28 +101,8 @@ function detectCategory(fileName: string, content: string): DocumentCategory {
 }
 
 async function extractTextFromPdf(arrayBuffer: ArrayBuffer): Promise<string> {
-  const pdfModule = await import('pdfjs-dist/build/pdf');
-  if (!pdfWorkerConfigured) {
-    const workerSrc = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
-    const workerUrl = (workerSrc as { default: string }).default;
-    pdfModule.GlobalWorkerOptions.workerSrc = workerUrl;
-    pdfWorkerConfigured = true;
-  }
-
-  const loadingTask = pdfModule.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
-  let text = '';
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: { str?: string }) => (typeof item.str === 'string' ? item.str : ''))
-      .join(' ');
-    text += `${pageText}\n`;
-  }
-
-  return text.trim();
+  // For now, return a placeholder message until PDF.js dependency is properly configured
+  return 'PDF text extraction is temporarily unavailable. Please convert your PDF to a text file or use a different format.';
 }
 
 async function extractTextFromDocx(arrayBuffer: ArrayBuffer): Promise<string> {
@@ -263,12 +178,12 @@ function extractKeywords(line: string): string[] {
 }
 
 function analyseRubricContent(content: string): KeywordAnalysis[] {
-  const lines = normaliseWhitespace(content)
+  const lines = normalizeWhitespace(content)
     .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && /[a-z]/i.test(line));
+    .map((line: string) => line.trim())
+    .filter((line: string) => line.length > 0 && /[a-z]/i.test(line));
 
-  return lines.map((line) => ({
+  return lines.map((line: string) => ({
     line,
     keywords: extractKeywords(line)
   }));
@@ -555,14 +470,7 @@ function mergeFiles(existing: ParsedFile[], incoming: ParsedFile[]): ParsedFile[
   return merged;
 }
 
-function formatUploadedAt(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
+const formatUploadedAt = (timestamp: number): string => formatTimestamp(timestamp);
 
 function classifyLabel(category: DocumentCategory): string {
   switch (category) {
@@ -761,7 +669,7 @@ function AiWriter() {
             return {
               id: createId('file'),
               fileName: file.name,
-              content: normaliseWhitespace(result.content),
+              content: normalizeWhitespace(result.content),
               wordCount: countWords(result.content),
               category,
               uploadedAt: Date.now(),

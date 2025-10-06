@@ -1,3 +1,6 @@
+import { escapeHtml, truncateText } from './common';
+import { STUDY_GUIDE_DEFAULTS } from './constants';
+
 type GenerateDocxOptions = {
   content: string;
 };
@@ -31,7 +34,7 @@ function crc32(data: Uint8Array) {
   return (crc ^ -1) >>> 0;
 }
 
-function concatUint8Arrays(parts: Uint8Array[]) {
+function concatUint8Arrays(parts: Uint8Array[]): Uint8Array {
   const total = parts.reduce((sum, part) => sum + part.length, 0);
   const result = new Uint8Array(total);
   let offset = 0;
@@ -151,14 +154,7 @@ function createStoredZip(entries: Array<{ name: string; data: Uint8Array }>): Ui
   return zipBody;
 }
 
-function escapeXml(input: string) {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+// Using escapeHtml from common.ts (XML and HTML escaping are very similar)
 
 function createDocxParagraphs(content: string) {
   const paragraphs = content
@@ -172,7 +168,7 @@ function createDocxParagraphs(content: string) {
 
   return paragraphs
     .map((paragraph) => {
-      const lines = paragraph.split(/\n+/).map((line) => escapeXml(line));
+      const lines = paragraph.split(/\n+/).map((line) => escapeHtml(line));
       if (!lines.length) {
         return '<w:p><w:r><w:t/></w:r></w:p>';
       }
@@ -239,7 +235,7 @@ async function generateDocx({ content }: GenerateDocxOptions): Promise<ArtifactR
   ]);
 
   return {
-    blob: new Blob([zipBytes], {
+    blob: new Blob([zipBytes as BlobPart], {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     }),
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -353,7 +349,7 @@ export function buildSolutionContent(options: {
 
   const anchorContext = contexts[0];
   const anchorSnippet = anchorContext?.content.replace(/\s+/g, ' ').trim() ?? '';
-  const anchorPreview = anchorSnippet.length > 220 ? `${anchorSnippet.slice(0, 220)}…` : anchorSnippet;
+  const anchorPreview = truncateText(anchorSnippet, STUDY_GUIDE_DEFAULTS.SNIPPET_LENGTH);
 
   const introductionParts: string[] = [];
   if (anchorContext) {

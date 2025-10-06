@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Assignment } from '../../lib/canvasClient';
+import { formatTimestamp } from '../utils/common';
 
 type Props = {
   assignments: Assignment[];
@@ -32,16 +33,9 @@ export default function AssignmentsList({
           onClick={onSelect ? () => onSelect(assignment) : undefined}
         >
           <div className="assignment-item__title">{assignment.name}</div>
-          {assignment.due_at ? (
-            <div className="assignment-item__due">
-              Due {new Date(assignment.due_at).toLocaleString()}
-            </div>
-          ) : (
-            <div className="assignment-item__due">
-              {/* PHASE 1: Provide clarity when Canvas omits due dates. */}
-              No due date provided – check Canvas for details.
-            </div>
-          )}
+          <div className="assignment-item__due">
+            {assignment.due_at ? `Due ${formatTimestamp(assignment.due_at)}` : 'No due date provided – check Canvas for details.'}
+          </div>
           <div className="assignment-item__course">
             {courseLookup[assignment.course_id] ? `Course: ${courseLookup[assignment.course_id]}` : 'Course unknown'}
             {assignment.html_url ? (

@@ -309,18 +309,10 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
         <div className="input-container">
           <div className="input-controls">
             <div className="class-selector">
-                <select
+              <label>Course Context</label>
+              <select
                   value={selectedCourse}
                   onChange={(e) => setSelectedCourse(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid var(--surface-border)',
-                    borderRadius: '6px',
-                    background: 'var(--surface-background)',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px'
-                  }}
                 >
                   <option value="">Select Course (Optional)</option>
                   {coursesToUse.map(course => (
@@ -338,9 +330,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
               onChange={setYoutubeUrl}
               onSubmit={handleYoutubeSubmit}
             />
-          </div>
-
-          {attachments.length > 0 && (
+          </div>          {attachments.length > 0 && (
             <div className="attachments-preview">
               {attachments.map(attachment => (
                 <div key={attachment.id} className="attachment">

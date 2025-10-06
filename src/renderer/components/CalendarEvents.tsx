@@ -1,4 +1,6 @@
 import React from 'react';
+import { formatTime } from '../utils/common';
+import { SPACING } from '../utils/constants';
 /* PHASE 1: Calendar view now consumes both Canvas events and assignment due dates. */
 export type CalendarItem = {
   id: string;
@@ -34,7 +36,7 @@ export default function CalendarEvents({ events, loading }: Props) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: SPACING.lg }}>
       {orderedDates.map((day) => (
         <div key={day}>
           <h4 style={{ margin: '0 0 6px 0', fontWeight: 600 }}>{day}</h4>
@@ -57,7 +59,7 @@ export default function CalendarEvents({ events, loading }: Props) {
                 >
                   <strong style={{ color: 'var(--text-primary)' }}>{event.title}</strong>{' '}
                   <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                    {new Date(event.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(event.start_at)}
                   </span>
                   {event.context_name ? (
                     <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}> · {event.context_name}</span>

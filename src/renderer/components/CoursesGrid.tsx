@@ -34,27 +34,26 @@ export default function CoursesGrid({ courses, loading, onSelectCourse }: Props)
           // PHASE 2: Allow tapping a course to drill down for contextual prompts later.
           onClick={onSelectCourse ? () => onSelectCourse(course) : undefined}
         >
-          {(() => {
+          {/* Simplified grade rendering */}
+          {React.useMemo(() => {
             const grade = deriveCourseGrade(course);
+            const isComplete = grade.status === 'complete';
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <div style={{ fontWeight: 600, flex: 1 }}>{course.name}</div>
-                <span
-                  style={{
-                    fontSize: 12,
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    border: '1px solid var(--surface-border)',
-                    background: grade.status === 'complete' ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)',
-                    color: grade.status === 'complete' ? '#047857' : 'var(--text-secondary)'
-                  }}
-                >
-                  {/* PHASE 4: Present the latest grade beside each course. */}
+                <span style={{
+                  fontSize: 12,
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  border: '1px solid var(--surface-border)',
+                  background: isComplete ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)',
+                  color: isComplete ? '#047857' : 'var(--text-secondary)'
+                }}>
                   {grade.display}
                 </span>
               </div>
             );
-          })()}
+          }, [course])}
           <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{course.course_code ?? 'No course code'}</div>
         </div>
       ))}

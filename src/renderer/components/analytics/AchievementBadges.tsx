@@ -1,4 +1,6 @@
 import React from 'react';
+import { formatDate } from '../../utils/common';
+import { SPACING } from '../../utils/constants';
 
 type Achievement = {
   id: string;
@@ -50,7 +52,7 @@ export default function AchievementBadges({
   const lockedAchievements = achievements.filter(a => !a.earned && (!a.progress || a.progress === 0));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: SPACING.xl }}>
       {/* Progress overview */}
       <div style={{ 
         padding: 20,
@@ -132,7 +134,7 @@ export default function AchievementBadges({
                     </div>
                     {achievement.earnedDate && (
                       <div style={{ fontSize: 10, opacity: 0.8, marginTop: 4 }}>
-                        Earned {new Date(achievement.earnedDate).toLocaleDateString()}
+                        Earned {formatDate(achievement.earnedDate)}
                       </div>
                     )}
                   </div>
