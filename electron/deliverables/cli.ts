@@ -10,6 +10,7 @@ import { zipRun } from './archive';
 import { sweepOldOutputs, type RetentionConfig } from './retention';
 import { resetRules as resetPostRules } from './postprocess/config';
 import type { ArtifactInput } from './types';
+import { runCodexAiReset } from './reset/orchestrator';
 
 const CHILD_FLAG = 'DELIVERABLES_CLI_CHILD';
 
@@ -368,6 +369,34 @@ async function handleSweepCommand(args: string[]): Promise<number> {
   return result.errors.length > 0 ? 1 : 0;
 }
 
+async function handleAiResetCommand(args: string[]): Promise<number> {
+  let mode: 'auto' | 'apply' | 'dry-run' = 'auto';
+  let timestamp: string | undefined;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--apply') {
+      mode = 'apply';
+    } else if (arg === '--dry-run') {
+      mode = 'dry-run';
+    } else if (arg === '--timestamp') {
+      timestamp = args[i + 1];
+      i += 1;
+    } else if (arg === '--help') {
+      console.log('Usage: deliverables codex:ai-reset [--dry-run|--apply] [--timestamp <iso>]');
+      return 0;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  const apply = mode === 'apply';
+  const dryRun = mode === 'dry-run' || mode === 'auto';
+  const report = await runCodexAiReset({ apply, dryRun, timestamp });
+  console.log(JSON.stringify(report, null, 2));
+  return report.success ? 0 : 1;
+}
+
 async function runInsideElectron(args: string[]): Promise<number> {
   app.commandLine.appendSwitch('headless');
   app.commandLine.appendSwitch('disable-gpu');
@@ -396,10 +425,12 @@ async function runInsideElectron(args: string[]): Promise<number> {
         return await handleArchiveCommand(commandArgs);
       case 'sweep':
         return await handleSweepCommand(commandArgs);
+      case 'codex:ai-reset':
+        return await handleAiResetCommand(commandArgs);
       case '--help':
       case '-h':
       case undefined:
-        console.log('Usage: deliverables <run|summary|insights|archive|sweep> [options]');
+        console.log('Usage: deliverables <run|summary|insights|archive|sweep|codex:ai-reset> [options]');
         return 0;
       default:
         console.error(`Unknown command: ${command}`);

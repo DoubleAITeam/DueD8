@@ -136,6 +136,14 @@ export function incrementUsage(delta: number): void {
   updateUsage(state.used + delta);
 }
 
+export function decrementUsage(delta: number): void {
+  if (!Number.isFinite(delta) || delta <= 0) {
+    return;
+  }
+  const nextUsed = Math.max(0, state.used - delta);
+  updateUsage(nextUsed);
+}
+
 export function setCap(cap: number): void {
   if (!Number.isFinite(cap) || cap <= 0) {
     return;

@@ -1,7 +1,7 @@
 import { bootstrapBudgetState, useBudgetStore } from '../state/budget';
 import { trackTokenBudgetActionBlocked } from '../../lib/analytics';
 
-const BLOCK_ERROR_CODE = 'E_BUDGET_EXCEEDED';
+export const BUDGET_BLOCK_ERROR_CODE = 'E_BUDGET_EXCEEDED';
 
 export function withBudgetGate<T extends unknown[], R>(
   entrypoint: string,
@@ -15,19 +15,20 @@ export function withBudgetGate<T extends unknown[], R>(
     let blockedTracked = false;
 
     if (state.isOverCap) {
-      store.openUpgradeModal();
+      store.showUpgradeModal({ source: entrypoint, usage: state.used, limit: state.cap });
       trackTokenBudgetActionBlocked(entrypoint, state);
       blockedTracked = true;
       const error = new Error(`Budget exceeded for ${entrypoint}`);
-      (error as { code?: string }).code = BLOCK_ERROR_CODE;
+      (error as { code?: string }).code = BUDGET_BLOCK_ERROR_CODE;
       throw error;
     }
 
     try {
       return await fn(...args);
     } catch (error) {
-      if ((error as { code?: string }).code === BLOCK_ERROR_CODE) {
-        store.openUpgradeModal();
+      if ((error as { code?: string }).code === BUDGET_BLOCK_ERROR_CODE) {
+        const latest = useBudgetStore.getState();
+        latest.showUpgradeModal({ source: entrypoint, usage: latest.used, limit: latest.cap });
         if (!blockedTracked) {
           trackTokenBudgetActionBlocked(entrypoint, useBudgetStore.getState());
           blockedTracked = true;
@@ -36,4 +37,17 @@ export function withBudgetGate<T extends unknown[], R>(
       throw error;
     }
   };
+}
+
+export async function ensureBudgetAllowance(entrypoint: string): Promise<boolean> {
+  const guard = withBudgetGate(entrypoint, async () => true);
+  try {
+    await guard();
+    return true;
+  } catch (error) {
+    if ((error as { code?: string }).code === BUDGET_BLOCK_ERROR_CODE) {
+      return false;
+    }
+    throw error;
+  }
 }

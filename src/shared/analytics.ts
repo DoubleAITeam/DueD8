@@ -1,10 +1,17 @@
 export type TokenBudgetAnalyticsEventName =
-  | 'token_budget/over_cap'
-  | 'token_budget/modal_view'
-  | 'token_budget/modal_click'
-  | 'token_budget/action_blocked';
+  | 'token_budget.over_cap'
+  | 'token_budget.modal_view'
+  | 'token_budget.modal_click'
+  | 'token_budget.action_blocked';
 
-export type TokenBudgetModalCTA = 'see_plans' | 'already_upgraded';
+export type AiAnalyticsEventName =
+  | 'ai/turn_start'
+  | 'ai/turn_final'
+  | 'ai/tool_call';
+
+export type AnalyticsEventName = TokenBudgetAnalyticsEventName | AiAnalyticsEventName;
+
+export type TokenBudgetModalCTA = 'upgrade' | 'close';
 
 export type TokenBudgetActionSource = 'main' | 'renderer';
 
@@ -19,6 +26,51 @@ export type BudgetSnapshotInput = {
   cap?: number | null;
   plan?: string | null;
 };
+
+export type AiTurnStartSnapshot = {
+  chatId: string;
+  messageId: string;
+  model: string;
+  mode: string;
+};
+
+export type AiTurnFinalSnapshot = AiTurnStartSnapshot & {
+  latencyMs: number;
+  usage?: { prompt?: number; completion?: number; total?: number };
+};
+
+export type AiToolCallSnapshot = {
+  chatId: string;
+  messageId: string;
+  tool: string;
+  latencyMs?: number;
+};
+
+export type TokenBudgetEventPayloads = {
+  'token_budget.over_cap': BudgetSnapshot;
+  'token_budget.modal_view': BudgetSnapshot & {
+    source?: string;
+  };
+  'token_budget.modal_click': BudgetSnapshot & {
+    source?: string;
+    cta: TokenBudgetModalCTA;
+  };
+  'token_budget.action_blocked': BudgetSnapshot & {
+    entrypoint?: string;
+    feature?: string;
+    source?: TokenBudgetActionSource;
+  };
+};
+
+export type AiEventPayloads = {
+  'ai/turn_start': AiTurnStartSnapshot;
+  'ai/turn_final': AiTurnFinalSnapshot;
+  'ai/tool_call': AiToolCallSnapshot;
+};
+
+export type AnalyticsEventPayloads = TokenBudgetEventPayloads & AiEventPayloads;
+
+export type AnalyticsPayload<Name extends AnalyticsEventName> = AnalyticsEventPayloads[Name];
 
 export function toBudgetSnapshot(input: BudgetSnapshotInput): BudgetSnapshot {
   const sanitizeNumber = (value: number | null | undefined): number => {
@@ -44,10 +96,10 @@ export function toBudgetSnapshot(input: BudgetSnapshotInput): BudgetSnapshot {
   };
 }
 
-export function mergeSnapshot(
+export function mergeSnapshot<T extends Record<string, unknown> = Record<string, unknown>>(
   input: BudgetSnapshotInput,
-  extra: Record<string, unknown> = {}
-): Record<string, unknown> {
+  extra: T = {} as T
+): BudgetSnapshot & T {
   return {
     ...toBudgetSnapshot(input),
     ...extra

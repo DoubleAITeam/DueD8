@@ -1,7 +1,8 @@
+import type { AiSummaryPayload, DeliverableRunRecord, RunSummary } from './types';
 import { getDeliverablesConfig } from './config';
-import type { DeliverableRunRecord, RunSummary, AiSummaryPayload } from './types';
-import { LLM_TEXT_MODEL, withAiTags, assertAiMetadata } from '../../src/shared/aiConfig';
-import { getPromptTemplate, renderPromptTemplate } from '../prompts/loader';
+import { assertAiMetadata, withAiTags } from '../../src/shared/aiConfig';
+import { assertAiRuntimeReady, getAiRuntimeConfig } from './config/aiRuntime';
+import { getPromptPack } from './prompts';
 
 function isEnabled(): boolean {
   return getDeliverablesConfig().featureFlags.aiSummary;
@@ -11,7 +12,22 @@ function resolveApiKey(): string | null {
   return getDeliverablesConfig().ai.openAiApiKey;
 }
 
-function buildPrompt(run: DeliverableRunRecord, summary: RunSummary): string {
+function renderTemplate(template: string, context: Record<string, unknown>): string {
+  return template.replace(/\{\{(.*?)\}\}/g, (_, rawKey: string) => {
+    const key = rawKey.trim();
+    const value = context[key];
+    if (value === undefined || value === null) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    return JSON.stringify(value);
+  });
+}
+
+function buildPrompt(run: DeliverableRunRecord, summary: RunSummary): { system: string; user: string } {
+  const promptPack = getPromptPack();
   const condensedResults = Array.isArray(run.results)
     ? run.results.slice(0, 20).map((result) => ({
         id: result?.id,
@@ -24,15 +40,22 @@ function buildPrompt(run: DeliverableRunRecord, summary: RunSummary): string {
       }))
     : [];
 
-  return renderPromptTemplate('ai-summary.user', {
-    RUN_ID: summary.runId,
-    TIMELINE: `Started ${new Date(summary.startedAt).toISOString()}, finished ${new Date(summary.finishedAt).toISOString()}, duration ${summary.durationMs}ms.`,
-    TOTALS: JSON.stringify(summary.totals),
-    BY_TYPE: JSON.stringify(summary.byType),
-    FALLBACK_COUNT: summary.fallbackCount,
-    HIGHLIGHTS: summary.bullets.join(' | '),
-    RESULTS_SAMPLE: JSON.stringify(condensedResults)
-  });
+  const context = {
+    runId: summary.runId,
+    startedAtIso: new Date(summary.startedAt).toISOString(),
+    finishedAtIso: new Date(summary.finishedAt).toISOString(),
+    durationMs: summary.durationMs,
+    totalsJson: summary.totals,
+    byTypeJson: summary.byType,
+    fallbackCount: summary.fallbackCount,
+    highlightsJson: summary.bullets,
+    resultsJson: condensedResults
+  } as Record<string, unknown>;
+
+  return {
+    system: promptPack.aiSummary.system,
+    user: renderTemplate(promptPack.aiSummary.user, context)
+  };
 }
 
 export async function buildAiSummary(
@@ -45,11 +68,13 @@ export async function buildAiSummary(
     }
 
     assertAiMetadata();
+    assertAiRuntimeReady();
     const apiKey = resolveApiKey();
     if (!apiKey) {
       return null;
     }
 
+    const runtime = getAiRuntimeConfig();
     if (typeof fetch !== 'function') {
       return null;
     }
@@ -66,12 +91,12 @@ export async function buildAiSummary(
           Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: LLM_TEXT_MODEL,
+          model: runtime.chatModel,
           temperature: 0.2,
           max_tokens: 250,
           messages: [
-            { role: 'system', content: getPromptTemplate('ai-summary.system') },
-            { role: 'user', content: prompt }
+            { role: 'system', content: prompt.system },
+            { role: 'user', content: prompt.user }
           ]
         }),
         signal: controller.signal
@@ -84,7 +109,7 @@ export async function buildAiSummary(
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
       if (typeof content === 'string' && content.trim().length > 0) {
-        const model = typeof data?.model === 'string' ? data.model : LLM_TEXT_MODEL;
+        const model = typeof data?.model === 'string' ? data.model : runtime.chatModel;
         return withAiTags({
           content: content.trim(),
           model,
@@ -93,12 +118,12 @@ export async function buildAiSummary(
       }
 
       return null;
-    } catch (error) {
+    } catch {
       return null;
     } finally {
       clearTimeout(timeout);
     }
-  } catch (error) {
+  } catch {
     return null;
   }
 }

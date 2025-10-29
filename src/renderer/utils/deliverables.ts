@@ -12,6 +12,7 @@ import type { AdapterOverviewEntry } from '../../../electron/deliverables/render
 import type { ZipResult } from '../../../electron/deliverables/archive';
 import type { RetentionConfig, RetentionSweepResult } from '../../../electron/deliverables/retention';
 import type { InsightBundle } from '../../../electron/deliverables/insights/types';
+import type { AiResetState } from '../../../electron/deliverables/reset/state';
 
 export type DeliverablePipelineResult = {
   success: boolean;
@@ -177,4 +178,8 @@ export async function isAiInsightsEnabled(): Promise<boolean> {
 
 export async function fetchInsightRedactionInfo(): Promise<{ enabled: boolean; patterns: string[] }> {
   return window.electron.invoke('deliverables:getInsightRedactionInfo');
+}
+
+export async function fetchAiResetState(): Promise<AiResetState> {
+  return window.electron.invoke('deliverables:getAiResetState');
 }

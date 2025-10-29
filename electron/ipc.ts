@@ -15,8 +15,11 @@ import {
   type ProcessedFile
 } from './fileProcessing';
 import './deliverables/ipc';
+import './ipc/chat';
 import {
   getBudgetState,
+  incrementUsage as incrementBudgetUsage,
+  decrementUsage as decrementBudgetUsage,
   setPlan as setBudgetPlan,
   setCap as setBudgetCap,
   resetBudget
@@ -83,6 +86,16 @@ function extractProFeatures(raw: string): string[] {
       continue;
     }
 
+    if (/^[-*]\s*\(PRO FEATURE\)/i.test(trimmed)) {
+      const feature = sanitizeFeatureCopy(
+        trimmed.replace(/^[-*]\s*\(PRO FEATURE\)\s*/i, '')
+      );
+      if (feature) {
+        results.push(feature);
+      }
+      continue;
+    }
+
     if (upper.startsWith('PRO:')) {
       const feature = sanitizeFeatureCopy(trimmed.slice(trimmed.indexOf(':') + 1));
       if (feature) {
@@ -104,7 +117,13 @@ function extractProFeatures(raw: string): string[] {
     }
   }
 
-  return results.slice(0, 5);
+  if (results.length) {
+    return results.slice(0, 5);
+  }
+
+  return results
+    .filter((feature, index, array) => array.indexOf(feature) === index)
+    .slice(0, 5);
 }
 
 async function readProFeatures(): Promise<string[]> {
@@ -134,6 +153,42 @@ async function readProFeatures(): Promise<string[]> {
 }
 
 ipcMain.handle('budget:getState', () => getBudgetState());
+
+ipcMain.handle('budget:checkAndReserve', (_event, payload: { cost: number }) => {
+  const cost = Number(payload?.cost ?? 0);
+  const { used, cap } = getBudgetState();
+
+  if (!Number.isFinite(cost) || cost <= 0) {
+    return { ok: true, used, limit: cap };
+  }
+
+  if (Number.isFinite(cap) && cap > 0 && used + cost > cap) {
+    return { ok: false, used, limit: cap };
+  }
+
+  try {
+    incrementBudgetUsage(cost);
+    const next = getBudgetState();
+    return { ok: true, used: next.used, limit: next.cap };
+  } catch (error) {
+    mainError('budget:checkAndReserve failed', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('budget:release', (_event, payload: { cost: number }) => {
+  const cost = Number(payload?.cost ?? 0);
+  if (!Number.isFinite(cost) || cost <= 0) {
+    return getBudgetState();
+  }
+  try {
+    decrementBudgetUsage(cost);
+    return getBudgetState();
+  } catch (error) {
+    mainError('budget:release failed', error);
+    throw error;
+  }
+});
 
 ipcMain.handle('budget:setPlan', (_event, plan: string) => {
   try {
@@ -170,6 +225,21 @@ ipcMain.handle('budget:refreshPlan', () => {
   return getBudgetState();
 });
 
+ipcMain.handle('budget:consume', (_event, amount: number) => {
+  try {
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      throw new Error('Invalid token amount');
+    }
+    incrementBudgetUsage(numeric);
+    return getBudgetState();
+  } catch (error) {
+    mainError('budget:consume failed', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('pro:features', async () => readProFeatures());
 ipcMain.handle('wip:getProBullets', async () => readProFeatures());
 
 const StudentSchema = z.object({

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Assignment } from '../../lib/canvasClient';
 import { useStore, type AssignmentContextEntry } from '../state/store';
 import { useAiUsageStore, estimateTokensFromTexts, estimateTokensFromText } from '../state/aiUsage';
+import { ensureBudgetAllowance, releaseBudgetReservation } from '../../shared/tokenBudget/ensureBudgetAllowance';
 import AiTokenBadge from '../components/ui/AiTokenBadge';
 import { buildSolutionContent, createSolutionArtifact } from '../utils/assignmentSolution';
 import StudyGuidePanel from '../components/StudyGuidePanel';
@@ -432,6 +433,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
 
   useEffect(() => {
     let cancelled = false;
+    let releaseReservation: (() => Promise<void>) | null = null;
     async function loadInstructorContext() {
       if (!assignment || hasInstructorContext) {
         return;
@@ -546,143 +548,183 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
   }, [assignment, combinedContexts, guardEnabled, solveCheck.status]);
 
   useEffect(() => {
-    if (!assignment || !hasGuideContext) {
-      if (solutionUrlRef.current) {
-        URL.revokeObjectURL(solutionUrlRef.current);
-        solutionUrlRef.current = null;
-      }
-      setSolutionStatus('idle');
-      setSolutionError(null);
-      setSolutionFile(null);
-      lastContextSignatureRef.current = null;
-      setGuidePlan(null);
-      setGuideProgress(null);
-      setGuideError(null);
-      setGuideStatus('idle');
-      activeGuideRunRef.current += 1;
-      return;
-    }
-
-    if (guardEnabled) {
-      if (solveCheck.status === 'checking') {
-        return;
-      }
-      if (solveCheck.status === 'blocked') {
-        return;
-      }
-    }
-
-    const signature = combinedContexts
-      .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
-      .join('|');
-
-    if (!signature.length) {
-      return;
-    }
-
-    if (lastContextSignatureRef.current === signature) {
-      if (
-        solutionStatus === 'ready' ||
-        solutionStatus === 'generating' ||
-        solutionStatus === 'error'
-      ) {
-        return;
-      }
-    }
-
     let cancelled = false;
-    setSolutionStatus('generating');
-    setSolutionError(null);
-    if (lastContextSignatureRef.current !== signature) {
-      setGuidePlan(null);
-      setGuideProgress(null);
-      setGuideError(null);
-      setGuideStatus('idle');
-      activeGuideRunRef.current += 1;
-    }
-    lastContextSignatureRef.current = signature;
 
-    const determineExtension = () => {
-      const searchOrder = [userContexts, instructorContexts, combinedContexts];
-      for (const list of searchOrder) {
-        for (const entry of list) {
-          const ext = entry.fileName.split('.').pop()?.toLowerCase();
-          if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
-            return { extension: ext as 'pdf' | 'docx', originalName: entry.fileName };
-          }
-        }
-      }
-      const fallbackName = `${assignment.name ?? 'assignment'}.docx`;
-      return { extension: 'docx' as const, originalName: fallbackName };
-    };
-
-    const { extension, originalName } = determineExtension();
-
-    const generate = async () => {
-      try {
-        const content = buildSolutionContent({
-          assignmentName: assignment.name,
-          courseName,
-          dueText,
-          contexts: combinedContexts.map((entry) => ({
-            fileName: entry.fileName,
-            content: entry.content
-          }))
-        });
-        const artifact = await createSolutionArtifact({ extension, content });
-        if (cancelled) {
-          return;
-        }
-        const contextTokens = combinedContexts.reduce(
-          (sum, entry) => sum + estimateTokensFromText(entry.content),
-          0
-        );
-        const documentTokens = estimateTokensFromText(content) + 200;
-        registerAiTask({
-          label: `Assemble submission draft for ${assignment.name}`,
-          category: 'generate',
-          steps: [
-            { label: 'Interpret instructions', tokenEstimate: contextTokens },
-            { label: `Compose ${extension.toUpperCase()} draft`, tokenEstimate: documentTokens }
-          ],
-          metadata: {
-            assignmentId: assignment.id,
-            extension,
-            sourceCount: combinedContexts.length
-          }
-        });
-        const sanitizedOriginal = safeDownloadName(
-          originalName || `${assignment.name ?? 'assignment'}.${extension}`
-        );
-        const ensuredBase = sanitizedOriginal.length ? sanitizedOriginal : `assignment.${extension}`;
-        const ensuredWithExt = ensuredBase.includes('.') ? ensuredBase : `${ensuredBase}.${extension}`;
-        const downloadName = ensuredWithExt.startsWith('Completed_')
-          ? ensuredWithExt
-          : `Completed_${ensuredWithExt}`;
-        const url = URL.createObjectURL(artifact.blob);
+    async function maybeGenerateSolution() {
+      if (!assignment || !hasGuideContext) {
         if (solutionUrlRef.current) {
           URL.revokeObjectURL(solutionUrlRef.current);
+          solutionUrlRef.current = null;
         }
-        solutionUrlRef.current = url;
-        setSolutionFile({ url, fileName: downloadName, mimeType: artifact.mimeType });
-        setSolutionStatus('ready');
-      } catch (err) {
-        if (!cancelled) {
-          if (solutionUrlRef.current) {
-            URL.revokeObjectURL(solutionUrlRef.current);
-            solutionUrlRef.current = null;
-          }
-          setSolutionFile(null);
-          setSolutionStatus('error');
-          setSolutionError((err as Error).message || 'Failed to generate the completed file.');
+        setSolutionStatus('idle');
+        setSolutionError(null);
+        setSolutionFile(null);
+        lastContextSignatureRef.current = null;
+        setGuidePlan(null);
+        setGuideProgress(null);
+        setGuideError(null);
+        setGuideStatus('idle');
+        activeGuideRunRef.current += 1;
+        return;
+      }
+
+      if (guardEnabled) {
+        if (solveCheck.status === 'checking' || solveCheck.status === 'blocked') {
+          return;
         }
       }
-    };
 
-    generate();
+      const signature = combinedContexts
+        .map((entry) => `${entry.fileName}::${entry.uploadedAt}::${entry.content.length}`)
+        .join('|');
+
+      if (!signature.length) {
+        return;
+      }
+
+      if (lastContextSignatureRef.current === signature) {
+        if (
+          solutionStatus === 'ready' ||
+          solutionStatus === 'generating' ||
+          solutionStatus === 'error'
+        ) {
+          return;
+        }
+      }
+
+      const contextTokensEstimate = combinedContexts.reduce(
+        (sum, entry) => sum + estimateTokensFromText(entry.content),
+        0
+      );
+      const solutionTokensEstimate = Math.max(1600, Math.round(contextTokensEstimate * 0.9));
+      const solutionCostEstimate = contextTokensEstimate + solutionTokensEstimate;
+
+      const allowed = await ensureBudgetAllowance(solutionCostEstimate, 'assignment.solution.generate');
+      if (!allowed) {
+        if (!cancelled) {
+          setSolutionStatus('idle');
+          setSolutionError(
+            'You have reached your AI token limit. Upgrade to generate submission-ready drafts.'
+          );
+        }
+        return;
+      }
+
+      let consumed = false;
+      releaseReservation = async () => {
+        if (consumed) {
+          return;
+        }
+        consumed = true;
+        await releaseBudgetReservation(solutionCostEstimate);
+      };
+
+      if (cancelled) {
+        await releaseReservation();
+        return;
+      }
+
+      setSolutionStatus('generating');
+      setSolutionError(null);
+      if (lastContextSignatureRef.current !== signature) {
+        setGuidePlan(null);
+        setGuideProgress(null);
+        setGuideError(null);
+        setGuideStatus('idle');
+        activeGuideRunRef.current += 1;
+      }
+      lastContextSignatureRef.current = signature;
+
+      const determineExtension = () => {
+        const searchOrder = [userContexts, instructorContexts, combinedContexts];
+        for (const list of searchOrder) {
+          for (const entry of list) {
+            const ext = entry.fileName.split('.').pop()?.toLowerCase();
+            if (ext && SUPPORTED_EXTENSIONS.includes(ext)) {
+              return { extension: ext as 'pdf' | 'docx', originalName: entry.fileName };
+            }
+          }
+        }
+        const fallbackName = `${assignment.name ?? 'assignment'}.docx`;
+        return { extension: 'docx' as const, originalName: fallbackName };
+      };
+
+      const { extension, originalName } = determineExtension();
+
+      const generate = async () => {
+        try {
+          const content = buildSolutionContent({
+            assignmentName: assignment.name,
+            courseName,
+            dueText,
+            contexts: combinedContexts.map((entry) => ({
+              fileName: entry.fileName,
+              content: entry.content
+            }))
+          });
+          const artifact = await createSolutionArtifact({ extension, content });
+          if (cancelled) {
+            await releaseReservation();
+            return;
+          }
+          const contextTokens = combinedContexts.reduce(
+            (sum, entry) => sum + estimateTokensFromText(entry.content),
+            0
+          );
+          const documentTokens = estimateTokensFromText(content) + 200;
+          registerAiTask({
+            label: `Assemble submission draft for ${assignment.name}`,
+            category: 'generate',
+            steps: [
+              { label: 'Interpret instructions', tokenEstimate: contextTokens },
+              { label: `Compose ${extension.toUpperCase()} draft`, tokenEstimate: documentTokens }
+            ],
+            metadata: {
+              assignmentId: assignment.id,
+              extension,
+              sourceCount: combinedContexts.length
+            }
+          });
+          const sanitizedOriginal = safeDownloadName(
+            originalName || `${assignment.name ?? 'assignment'}.${extension}`
+          );
+          const ensuredBase = sanitizedOriginal.length ? sanitizedOriginal : `assignment.${extension}`;
+          const ensuredWithExt = ensuredBase.includes('.') ? ensuredBase : `${ensuredBase}.${extension}`;
+          const downloadName = ensuredWithExt.startsWith('Completed_')
+            ? ensuredWithExt
+            : `Completed_${ensuredWithExt}`;
+          const url = URL.createObjectURL(artifact.blob);
+          if (solutionUrlRef.current) {
+            URL.revokeObjectURL(solutionUrlRef.current);
+          }
+          solutionUrlRef.current = url;
+          setSolutionFile({ url, fileName: downloadName, mimeType: artifact.mimeType });
+          setSolutionStatus('ready');
+          consumed = true;
+        } catch (err) {
+          if (!cancelled) {
+            if (solutionUrlRef.current) {
+              URL.revokeObjectURL(solutionUrlRef.current);
+              solutionUrlRef.current = null;
+            }
+            setSolutionFile(null);
+            setSolutionStatus('error');
+            setSolutionError((err as Error).message || 'Failed to generate the completed file.');
+          }
+          await releaseReservation();
+        }
+      };
+
+      void generate();
+    }
+
+    void maybeGenerateSolution();
 
     return () => {
       cancelled = true;
+      if (releaseReservation) {
+        void releaseReservation();
+      }
     };
   }, [
     assignment,
@@ -720,6 +762,26 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
     if (guideStatus === 'generating') {
       return;
     }
+    const contextTokensEstimate = combinedContexts.reduce(
+      (sum, entry) => sum + estimateTokensFromText(entry.content),
+      0
+    );
+    const guideTokensEstimate = Math.max(1200, Math.round(contextTokensEstimate * 0.6));
+    const guideCostEstimate = contextTokensEstimate + guideTokensEstimate;
+
+    const allowed = await ensureBudgetAllowance(guideCostEstimate, 'assignment.studyGuide.generate');
+    if (!allowed) {
+      setGuideError('You have reached your AI token limit. Upgrade to generate new study guides.');
+      return;
+    }
+    let consumed = false;
+    const releaseReservation = async () => {
+      if (consumed) {
+        return;
+      }
+      consumed = true;
+      await releaseBudgetReservation(guideCostEstimate);
+    };
     const previousPlan = guidePlan;
     try {
       setGuideStatus('generating');
@@ -748,6 +810,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => window.setTimeout(resolve, 160));
         if (activeGuideRunRef.current !== runId) {
+          await releaseReservation();
           return;
         }
         const nextSections = plan.sections.slice(0, index + 1);
@@ -760,6 +823,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       }
 
       if (activeGuideRunRef.current !== runId) {
+        await releaseReservation();
         return;
       }
       setGuideProgress(null);
@@ -776,6 +840,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           sectionCount: plan.sections.length
         }
       });
+      consumed = true;
     } catch (err) {
       console.error('Failed to generate study guide', err);
       if (previousPlan) {
@@ -784,6 +849,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       setGuideError((err as Error).message || 'Failed to generate the guide.');
       setGuideProgress(null);
       setGuideStatus('error');
+      await releaseReservation();
     }
   };
 
@@ -837,9 +903,29 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       return;
     }
 
+    const extractionEstimate = supported.length * 1500;
+    const organisationEstimate = supported.length * 400;
+    const processingCostEstimate = extractionEstimate + organisationEstimate;
+
+    const allowed = await ensureBudgetAllowance(processingCostEstimate, 'assignment.files.process');
+    if (!allowed) {
+      setError('You have reached your AI token limit. Upgrade to process additional files.');
+      setStatus('error');
+      return;
+    }
+
     setProcessing(true);
     setStatus('idle');
     setError(null);
+
+    let consumed = false;
+    const releaseReservation = async () => {
+      if (consumed) {
+        return;
+      }
+      consumed = true;
+      await releaseBudgetReservation(processingCostEstimate);
+    };
 
     try {
       const descriptors: Array<{ path: string; name: string; type?: string }> = [];
@@ -883,6 +969,7 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
           fileNames: combined.map((entry) => entry.fileName)
         }
       });
+      consumed = true;
 
       appendAssignmentContext(
         assignment.id,
@@ -896,8 +983,12 @@ export default function AssignmentDetail({ assignment, courseName, onBack, backL
       setError((err as Error).message || 'File processing failed.');
       setToast('File processing failed.');
       setStatus('error');
+      await releaseReservation();
     } finally {
       setProcessing(false);
+      if (!consumed) {
+        void releaseReservation();
+      }
     }
   }
 

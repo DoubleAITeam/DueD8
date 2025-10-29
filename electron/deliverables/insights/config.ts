@@ -27,3 +27,23 @@ export function getOpenAiApiKey(): string | undefined {
 export function isRedactionEnabled(): boolean {
   return getDeliverablesConfig().insights.redact;
 }
+
+export function getModelGeneration(): string {
+  return getDeliverablesConfig().ai.modelGeneration;
+}
+
+export function getPromptPackVersion(): string {
+  return getDeliverablesConfig().ai.promptPackVersion;
+}
+
+export function getEmbeddingsModel(): string {
+  return getDeliverablesConfig().ai.embeddingsModel;
+}
+
+export function getAiBadgeLabel(): string {
+  return getDeliverablesConfig().ai.badgeLabel;
+}
+
+export function getRegenerationBanner(): string {
+  return getDeliverablesConfig().ai.regenerationBanner;
+}

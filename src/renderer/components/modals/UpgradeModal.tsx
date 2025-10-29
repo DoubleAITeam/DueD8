@@ -1,14 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useBudgetStore } from '../../state/budget';
-import { trackTokenBudgetModalClick, trackTokenBudgetModalView } from '../../../lib/analytics';
-
-const FALLBACK_FEATURES = [
-  'Longer token limits',
-  'Priority queue',
-  'Multi-file renders',
-  'Export to PDF/Docx',
-  'Audit history'
-];
+import { useNavigateOptional } from '../../routes/router';
+import { logEvent } from '../../../lib/analytics';
+import { FALLBACK_PRO_FEATURES, getProFeatures } from '../../../shared/pro/getProFeatures';
 
 export function UpgradeModal(): JSX.Element | null {
   const upgradeModalOpen = useBudgetStore((state) => state.upgradeModalOpen);
@@ -18,9 +13,18 @@ export function UpgradeModal(): JSX.Element | null {
   const used = useBudgetStore((state) => state.used);
   const cap = useBudgetStore((state) => state.cap);
   const isOverCap = useBudgetStore((state) => state.isOverCap);
-  const [features, setFeatures] = useState<string[]>(FALLBACK_FEATURES);
+  const modalSource = useBudgetStore((state) => state.upgradeModalSource);
+  const modalUsage = useBudgetStore((state) => state.upgradeModalUsage);
+  const modalLimit = useBudgetStore((state) => state.upgradeModalLimit);
+  const [features, setFeatures] = useState<string[]>(FALLBACK_PRO_FEATURES);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const hasTrackedViewRef = useRef(false);
+  const navigate = useNavigateOptional();
+  const routerReady = Boolean(navigate);
+
+  const usage = typeof modalUsage === 'number' ? modalUsage : used;
+  const limit = typeof modalLimit === 'number' ? modalLimit : cap;
+  const source = modalSource ?? 'unknown';
 
   useEffect(() => {
     if (!upgradeModalOpen) {
@@ -28,44 +32,74 @@ export function UpgradeModal(): JSX.Element | null {
       return;
     }
     if (!hasTrackedViewRef.current) {
-      trackTokenBudgetModalView({ used, cap, plan });
+      logEvent('token_budget.modal_view', {
+        source,
+        usage,
+        limit,
+        plan
+      });
       hasTrackedViewRef.current = true;
     }
     let cancelled = false;
-    window.dued8.budget
-      .getProBullets()
+    getProFeatures()
       .then((items) => {
-        if (!cancelled && Array.isArray(items) && items.length > 0) {
-          setFeatures(items.slice(0, 5));
+        if (!cancelled && items.length > 0) {
+          setFeatures(items);
         }
       })
       .catch((error) => {
         console.error('[budget] Failed to load PRO feature copy', error);
-        setFeatures(FALLBACK_FEATURES);
+        setFeatures(FALLBACK_PRO_FEATURES);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [upgradeModalOpen]);
+  }, [upgradeModalOpen, plan, source, usage, limit]);
 
   const usageCopy = useMemo(() => {
-    const formattedCap = cap ? cap.toLocaleString() : '—';
-    const formattedUsed = used.toLocaleString();
+    const formattedCap = Number.isFinite(limit) && limit > 0 ? limit.toLocaleString() : '—';
+    const formattedUsed = usage.toLocaleString();
     return `You\'ve used ${formattedUsed} of ${formattedCap} tokens on the ${plan} plan.`;
-  }, [cap, plan, used]);
+  }, [limit, plan, usage]);
 
-  if (!upgradeModalOpen) {
+  const formattedSource = useMemo(() => {
+    if (!source || source === 'unknown') {
+      return null;
+    }
+    return source.replace(/\./g, ' › ');
+  }, [source]);
+
+  if (!upgradeModalOpen || !routerReady) {
     return null;
   }
 
-  const handleSeePlans = () => {
-    trackTokenBudgetModalClick({ used, cap, plan }, 'see_plans');
-    window.open('https://dued8.com/pricing', '_blank', 'noopener');
+  const modalRoot = document.getElementById('modal-root');
+  if (!modalRoot) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[upgrade-modal] Missing #modal-root element for portal rendering');
+    }
+    return null;
+  }
+
+  const emitClick = (cta: 'upgrade' | 'close') => {
+    logEvent('token_budget.modal_click', {
+      cta,
+      source,
+      usage,
+      limit,
+      plan
+    });
+  };
+
+  const handleUpgrade = () => {
+    emitClick('upgrade');
+    navigate?.('/pro');
+    closeUpgradeModal();
   };
 
   const handleAlreadyUpgraded = async () => {
-    trackTokenBudgetModalClick({ used, cap, plan }, 'already_upgraded');
+    emitClick('upgrade');
     setIsRefreshing(true);
     try {
       const next = await window.dued8.budget.refreshPlan();
@@ -80,7 +114,12 @@ export function UpgradeModal(): JSX.Element | null {
     }
   };
 
-  return (
+  const handleClose = () => {
+    emitClick('close');
+    closeUpgradeModal();
+  };
+
+  const modalContent = (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-content upgrade-modal">
         <div className="upgrade-modal__header">
@@ -92,12 +131,17 @@ export function UpgradeModal(): JSX.Element | null {
                 You&apos;ve hit your limit. Upgrade to keep generating without interruption.
               </p>
             ) : null}
+            {formattedSource ? (
+              <p className="upgrade-modal__subtitle" style={{ marginTop: 8 }}>
+                Triggered by: {formattedSource}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
             className="upgrade-modal__close"
             aria-label="Close upgrade modal"
-            onClick={closeUpgradeModal}
+            onClick={handleClose}
           >
             ×
           </button>
@@ -113,14 +157,22 @@ export function UpgradeModal(): JSX.Element | null {
         </ul>
 
         <div className="upgrade-modal__actions">
-          <button type="button" className="btn btn-secondary" onClick={handleSeePlans}>
-            See plans
+          <button type="button" className="btn btn-secondary" onClick={handleClose}>
+            Maybe later
           </button>
           <button
             type="button"
             className="btn btn-primary"
+            onClick={handleUpgrade}
+          >
+            Upgrade to PRO
+          </button>
+          <button
+            type="button"
+            className="btn btn-link"
             onClick={handleAlreadyUpgraded}
             disabled={isRefreshing}
+            style={{ marginLeft: 'auto' }}
           >
             {isRefreshing ? 'Checking…' : 'I already upgraded'}
           </button>
@@ -128,6 +180,8 @@ export function UpgradeModal(): JSX.Element | null {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, modalRoot);
 }
 
 export default UpgradeModal;

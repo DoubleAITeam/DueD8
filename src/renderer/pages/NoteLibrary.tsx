@@ -10,6 +10,7 @@ import {
 import { useStore } from '../state/store';
 import { useNavigate } from '../routes/router';
 import { useAiUsageStore, estimateTokensFromText, estimateTokensFromTexts } from '../state/aiUsage';
+import { ensureBudgetAllowance, releaseBudgetReservation } from '../../shared/tokenBudget/ensureBudgetAllowance';
 import AiTokenBadge from '../components/ui/AiTokenBadge';
 
 const INPUT_MODES = [
@@ -484,25 +485,38 @@ export default function NoteLibrary() {
   }
 
   async function processInput() {
+    setError(null);
+    let pendingTask:
+      | {
+          label: string;
+          category: 'summarize' | 'parse' | 'transcribe';
+          steps: Array<{ label: string; tokenEstimate: number }>;
+          metadata?: Record<string, unknown>;
+        }
+      | null = null;
+    let reservationCost = 0;
+    let reservationActive = false;
     try {
-      setError(null);
-      setIsProcessing(true);
-      let pendingTask:
-        | {
-            label: string;
-            category: 'summarize' | 'parse' | 'transcribe';
-            steps: Array<{ label: string; tokenEstimate: number }>;
-            metadata?: Record<string, unknown>;
-          }
-        | null = null;
       if (mode === 'text') {
         const trimmed = textInput.trim();
         if (!trimmed) {
           setError('Add or paste some text before running the AI organizer.');
           return;
         }
+        const interpretationEstimate = estimateTokensFromText(trimmed);
+        const structuringEstimate = Math.max(400, Math.round(interpretationEstimate * 0.6));
+        reservationCost = interpretationEstimate + structuringEstimate;
+        const allowed = await ensureBudgetAllowance(reservationCost, 'notes.organize');
+        if (!allowed) {
+          setError('You have reached your free AI token limit. Upgrade to keep organising notes with DueD8.');
+          return;
+        }
+        reservationActive = true;
+        setIsProcessing(true);
         const { blocks, analysis } = buildBlocksFromText(trimmed);
         if (blocks.length === 0) {
+          await releaseBudgetReservation(reservationCost);
+          reservationActive = false;
           setError('No note blocks detected. Add more structure or try again.');
           return;
         }
@@ -510,7 +524,7 @@ export default function NoteLibrary() {
         setDraftAnalysis(analysis);
         setDraftSource({ type: 'text', transcript: trimmed });
         setDraftTitle(analysis.suggestedTitle ?? '');
-        const interpretationTokens = estimateTokensFromText(trimmed);
+        const interpretationTokens = interpretationEstimate;
         const structuringTokens = estimateTokensFromTexts([
           blocks.join('\n'),
           analysis.keyTakeaways.join(' '),
@@ -533,9 +547,20 @@ export default function NoteLibrary() {
           setError('Choose an image to run OCR.');
           return;
         }
+        const approxTokens = Math.max(2400, Math.round(((imageFile.size || 512000) / 1024) * 4));
+        reservationCost = approxTokens;
+        const allowed = await ensureBudgetAllowance(reservationCost, 'notes.organize');
+        if (!allowed) {
+          setError('You have reached your free AI token limit. Upgrade to keep organising notes with DueD8.');
+          return;
+        }
+        reservationActive = true;
+        setIsProcessing(true);
         const extracted = await simulateImageOcr(imageFile);
         const { blocks, analysis } = buildBlocksFromText(extracted);
         if (blocks.length === 0) {
+          await releaseBudgetReservation(reservationCost);
+          reservationActive = false;
           setError('The OCR result did not include enough readable text. Try another image.');
           return;
         }
@@ -574,6 +599,15 @@ export default function NoteLibrary() {
           setShowUpgrade(true);
           return;
         }
+        const approxTokens = Math.max(3200, Math.round(((audioFile.size || 1048576) / 1024) * 3));
+        reservationCost = approxTokens;
+        const allowed = await ensureBudgetAllowance(reservationCost, 'notes.organize');
+        if (!allowed) {
+          setError('You have reached your free AI token limit. Upgrade to keep organising notes with DueD8.');
+          return;
+        }
+        reservationActive = true;
+        setIsProcessing(true);
         const transcription = await simulateAudioTranscription(audioFile);
         const { blocks, analysis } = buildBlocksFromText(transcription.transcript);
         const mergedBlocks = transcription.segments.length
@@ -592,6 +626,8 @@ export default function NoteLibrary() {
           suggestedTitle: analysis.suggestedTitle
         };
         if (mergedBlocks.length === 0) {
+          await releaseBudgetReservation(reservationCost);
+          reservationActive = false;
           setError('Transcription succeeded but no clear topics were detected.');
           return;
         }
@@ -623,7 +659,8 @@ export default function NoteLibrary() {
           }
         };
       } else if (mode === 'youtube') {
-        if (!youtubeUrl.trim()) {
+        const trimmedUrl = youtubeUrl.trim();
+        if (!trimmedUrl) {
           setError('Enter a YouTube URL to transcribe.');
           return;
         }
@@ -631,7 +668,15 @@ export default function NoteLibrary() {
           setShowUpgrade(true);
           return;
         }
-        const transcription = await simulateYoutubeTranscription(youtubeUrl.trim());
+        reservationCost = 4200;
+        const allowed = await ensureBudgetAllowance(reservationCost, 'notes.organize');
+        if (!allowed) {
+          setError('You have reached your free AI token limit. Upgrade to keep organising notes with DueD8.');
+          return;
+        }
+        reservationActive = true;
+        setIsProcessing(true);
+        const transcription = await simulateYoutubeTranscription(trimmedUrl);
         const { blocks, analysis } = buildBlocksFromText(transcription.transcript);
         const mergedBlocks = transcription.segments.length
           ? transcription.segments.map((segment) => `${segment.topic}: ${segment.summary}`)
@@ -649,6 +694,8 @@ export default function NoteLibrary() {
           suggestedTitle: analysis.suggestedTitle
         };
         if (mergedBlocks.length === 0) {
+          await releaseBudgetReservation(reservationCost);
+          reservationActive = false;
           setError('YouTube transcription succeeded but no clear topics were detected.');
           return;
         }
@@ -656,7 +703,7 @@ export default function NoteLibrary() {
         setDraftAnalysis(mergedAnalysis);
         setDraftSource({
           type: 'youtube',
-          rawInputLink: youtubeUrl.trim(),
+          rawInputLink: trimmedUrl,
           sourceName: transcription.videoTitle,
           transcript: transcription.transcript
         });
@@ -688,6 +735,10 @@ export default function NoteLibrary() {
       }
     } finally {
       setIsProcessing(false);
+      if (reservationActive && reservationCost > 0 && pendingTask === null) {
+        void releaseBudgetReservation(reservationCost);
+        reservationActive = false;
+      }
     }
   }
 

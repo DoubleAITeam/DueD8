@@ -4,9 +4,13 @@ import type { BudgetState } from '../../../electron/tokenBudget';
 type BudgetStore = BudgetState & {
   lastNotifiedAt: number | null;
   upgradeModalOpen: boolean;
+  upgradeModalSource: string | null;
+  upgradeModalUsage: number | null;
+  upgradeModalLimit: number | null;
   setBudget: (state: BudgetState) => void;
   markNotified: (timestamp?: number) => void;
-  openUpgradeModal: () => void;
+  showUpgradeModal: (payload?: { source?: string; usage?: number; limit?: number }) => void;
+  openUpgradeModal: (source?: string) => void;
   closeUpgradeModal: () => void;
 };
 
@@ -21,6 +25,9 @@ export const useBudgetStore = create<BudgetStore>((set) => ({
   ...DEFAULT_BUDGET_STATE,
   lastNotifiedAt: null,
   upgradeModalOpen: false,
+  upgradeModalSource: null,
+  upgradeModalUsage: null,
+  upgradeModalLimit: null,
   setBudget: (budget) =>
     set((state) => ({
       ...state,
@@ -33,11 +40,23 @@ export const useBudgetStore = create<BudgetStore>((set) => ({
     set({
       lastNotifiedAt: typeof timestamp === 'number' ? timestamp : Date.now()
     }),
-  openUpgradeModal: () =>
+  showUpgradeModal: (payload) =>
     set((state) => ({
       ...state,
       upgradeModalOpen: true,
-      lastNotifiedAt: Date.now()
+      lastNotifiedAt: Date.now(),
+      upgradeModalSource: payload?.source ?? state.upgradeModalSource ?? null,
+      upgradeModalUsage:
+        typeof payload?.usage === 'number' ? payload?.usage : state.upgradeModalUsage,
+      upgradeModalLimit:
+        typeof payload?.limit === 'number' ? payload?.limit : state.upgradeModalLimit
+    })),
+  openUpgradeModal: (source) =>
+    set((state) => ({
+      ...state,
+      upgradeModalOpen: true,
+      lastNotifiedAt: Date.now(),
+      upgradeModalSource: source ?? state.upgradeModalSource ?? null
     })),
   closeUpgradeModal: () => set((state) => ({ ...state, upgradeModalOpen: false }))
 }));
@@ -66,7 +85,11 @@ export async function bootstrapBudgetState(): Promise<void> {
     const state = await window.dued8.budget.getState();
     useBudgetStore.getState().setBudget(state);
     if (state.isOverCap) {
-      useBudgetStore.getState().openUpgradeModal();
+      useBudgetStore.getState().showUpgradeModal({
+        source: 'system',
+        usage: state.used,
+        limit: state.cap
+      });
     }
   } catch (error) {
     console.error('[budget] Failed to fetch initial budget state', error);
@@ -77,10 +100,17 @@ export async function bootstrapBudgetState(): Promise<void> {
   });
   const onBlocked = window.dued8.budget.onBlocked((next) => {
     useBudgetStore.getState().setBudget(next);
+    useBudgetStore.getState().showUpgradeModal({
+      source: 'system',
+      usage: next.used,
+      limit: next.cap
+    });
+  });
+  const onPaywall = window.dued8.ai.paywall.onOpen(() => {
     useBudgetStore.getState().openUpgradeModal();
   });
 
-  unsubscribeFns = [onChanged, onBlocked];
+  unsubscribeFns = [onChanged, onBlocked, onPaywall];
 }
 
 export function resetBudgetListeners(): void {

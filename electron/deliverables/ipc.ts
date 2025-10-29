@@ -20,6 +20,7 @@ import {
   isAiInsightsAvailable,
   getRedactionInfo
 } from './insights/build';
+import { loadAiResetState } from './reset/state';
 
 function normalizeCourseContext(raw: unknown): CourseContext | undefined {
   if (!raw || typeof raw !== 'object') {
@@ -271,6 +272,10 @@ ipcMain.handle('deliverables:isAiInsightsEnabled', async () => {
 
 ipcMain.handle('deliverables:getInsightRedactionInfo', async () => {
   return getRedactionInfo();
+});
+
+ipcMain.handle('deliverables:getAiResetState', async () => {
+  return loadAiResetState();
 });
 
 function normalizeRetentionConfig(raw: unknown): RetentionConfig | undefined {

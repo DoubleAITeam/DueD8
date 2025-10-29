@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../components/layout/AppShell';
 import AiTokenBadge from '../components/ui/AiTokenBadge';
 import { useAiUsageStore, estimateTokensFromText, estimateTokensFromTexts } from '../state/aiUsage';
+import { ensureBudgetAllowance } from '../../shared/tokenBudget/ensureBudgetAllowance';
 
 type DocumentCategory = 'draft' | 'rubric' | 'instructions' | 'notes' | 'research' | 'other';
 
@@ -694,9 +695,24 @@ function AiWriter() {
   }, [assignments]);
 
   const runAnalysis = useCallback(
-    (assignmentId: string) => {
+    async (assignmentId: string) => {
       const targetAssignment = assignments.find((assignment) => assignment.id === assignmentId);
       if (!targetAssignment) {
+        return;
+      }
+
+      const contextTokensEstimate = targetAssignment.files.reduce(
+        (sum, file) => sum + estimateTokensFromText(file.content),
+        0
+      );
+      const suggestionTokensEstimate = Math.max(800, Math.round(contextTokensEstimate * 0.6));
+      const analysisCostEstimate = contextTokensEstimate + suggestionTokensEstimate;
+      const allowed = await ensureBudgetAllowance(analysisCostEstimate, 'aiWriter.analysis');
+      if (!allowed) {
+        setFeedback({
+          type: 'error',
+          message: 'You have reached your AI token limit. Upgrade to regenerate suggestions.'
+        });
         return;
       }
 
@@ -833,7 +849,7 @@ function AiWriter() {
 
   const handleRegenerate = useCallback(() => {
     if (!activeAssignment) return;
-    runAnalysis(activeAssignment.id);
+    void runAnalysis(activeAssignment.id);
   }, [activeAssignment, runAnalysis]);
 
   useEffect(() => {
@@ -852,7 +868,7 @@ function AiWriter() {
   }, [feedback]);
 
   return (
-    <AppShell pageTitle="AI Writer">
+    <AppShell pageTitle="AI Writer" showAiBadge enableAiFreezeOverlay>
       <div className="ai-writer">
         <aside className="ai-writer__sidebar">
           <div className="ai-writer__sidebar-header">

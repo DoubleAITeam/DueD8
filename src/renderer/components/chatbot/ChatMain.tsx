@@ -10,9 +10,10 @@ type ChatMainProps = {
   selectedModel: AIModel;
   onModelChange: (model: AIModel) => void;
   courses: any[];
+  aiFrozen: boolean;
 };
 
-export default function ChatMain({ session, selectedModel, onModelChange, courses }: ChatMainProps) {
+export default function ChatMain({ session, selectedModel, onModelChange, courses, aiFrozen }: ChatMainProps) {
   const { addMessage, setTyping, setError } = useChatbotStore();
   const [message, setMessage] = useState('');
   const [selectedCourse, setSelectedCourse] = useState('');
@@ -53,6 +54,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
   }, [message]);
 
   const handleSendMessage = async () => {
+    if (aiFrozen) return;
     if (!message.trim() && attachments.length === 0) return;
 
     const userMessage = {
@@ -115,6 +117,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
   };
 
   const handleFileUpload = (files: File[]) => {
+    if (aiFrozen) return;
     const newAttachments: ChatAttachment[] = files.map(file => ({
       id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type: 'file',
@@ -125,6 +128,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
   };
 
   const handleYoutubeSubmit = () => {
+    if (aiFrozen) return;
     if (!youtubeUrl.trim()) return;
 
     const attachment: ChatAttachment = {
@@ -138,6 +142,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
   };
 
   const removeAttachment = (attachmentId: string) => {
+    if (aiFrozen) return;
     setAttachments(prev => prev.filter(att => att.id !== attachmentId));
   };
 
@@ -358,6 +363,7 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
                   <button
                     className="attachment__remove"
                     onClick={() => removeAttachment(attachment.id)}
+                    disabled={aiFrozen}
                   >
                     <XIcon size={14} />
                   </button>
@@ -375,11 +381,13 @@ export default function ChatMain({ session, selectedModel, onModelChange, course
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={1}
+              disabled={aiFrozen}
+              readOnly={aiFrozen}
             />
             <button
               className="send-btn"
               onClick={handleSendMessage}
-              disabled={(!message.trim() && attachments.length === 0) || isLoading}
+              disabled={aiFrozen || (!message.trim() && attachments.length === 0) || isLoading}
             >
               <SendIcon size={16} />
               Send

@@ -1,4 +1,4 @@
-import { ArtifactKind, DeliverableRunRecord } from '../types';
+import type { ArtifactKind } from '../types';
 
 export interface BaseInsight {
   artifactId: string;
@@ -10,24 +10,34 @@ export interface BaseInsight {
   wordCount?: number;
   pageCount?: number;
   keywords?: string[];
-  warnings?: string[];          // size > limit, unreadable, etc.
+  warnings?: string[];
   redacted?: boolean;
 }
 
 export interface AiInsight {
   artifactId: string;
-  summary?: string;             // ≤ 1200 chars
-  actionItems?: string[];       // short bullets
-  confidence?: number;          // 0..1
+  summary?: string;
+  actionItems?: string[];
+  confidence?: number;
   model?: string;
   modelGeneration?: string;
   promptPackVersion?: string;
+  updatedAt?: string;
+}
+
+export interface InsightMetadata {
+  modelGeneration: string;
+  promptPackVersion: string;
+  embeddingsModel: string;
+  updatedAt: number;
+  aiModel?: string;
 }
 
 export interface InsightBundle {
   runId: string;
   createdAt: number;
-  base: Record<string, BaseInsight>; // by artifactId
-  ai?: Record<string, AiInsight>;    // optional
-  version: number;                   // bump on schema change
+  base: Record<string, BaseInsight>;
+  ai?: Record<string, AiInsight>;
+  version: number;
+  metadata: InsightMetadata;
 }

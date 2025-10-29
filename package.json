@@ -26,6 +26,7 @@
     "deliverables:insights": "node bin/deliverables.js insights",
     "deliverables:archive": "node bin/deliverables.js archive",
     "deliverables:sweep": "node bin/deliverables.js sweep",
+    "codex:ai-reset": "node bin/deliverables.js codex:ai-reset",
     "test:smoke:legacy": "node tests/run-tests.js",
     "test:smoke:e2e": "TS_PROJECT=tsconfig.deliverables.json node scripts/run-ts.js tests/e2e/smoke.test.ts",
     "lint": "node scripts/run-eslint.js --ext .ts electron/deliverables scripts tests",

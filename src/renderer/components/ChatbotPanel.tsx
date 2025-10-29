@@ -5,6 +5,7 @@ import { useStore } from '../state/store';
 import { featureFlags } from '../../shared/featureFlags';
 import { deriveCourseGrade } from '../../lib/gradeUtils';
 import { useAiUsageStore, estimateTokensFromText } from '../state/aiUsage';
+import { ensureBudgetAllowance } from '../../shared/tokenBudget/ensureBudgetAllowance';
 import AiTokenBadge from './ui/AiTokenBadge';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -511,9 +512,35 @@ export default function ChatbotPanel({
     return promptTokens + expectedReply;
   }, [input]);
 
-  function sendMessage(text: string) {
+  const sendMessage = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || loading) {
+      return;
+    }
+
+    const estimatedCost = chatTokenEstimate ?? 360;
+    const allowed = await ensureBudgetAllowance(estimatedCost, 'chatbot.message');
+    if (!allowed) {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (
+          last?.role === 'assistant' &&
+          last.content.includes('Upgrade to keep chatting with DueD8')
+        ) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content:
+              'You have reached your AI token limit. Upgrade to keep chatting with DueD8.'
+          }
+        ];
+      });
+      return;
+    }
+
     const userMessage: ChatMessage = { role: 'user', content: trimmed };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
@@ -600,7 +627,7 @@ export default function ChatbotPanel({
         }
       });
     }, 200);
-  }
+  };
 
   if (chatbotMinimized) {
     return (
@@ -688,7 +715,7 @@ export default function ChatbotPanel({
           <button
             key={suggestion}
             type="button"
-            onClick={() => sendMessage(suggestion)}
+            onClick={() => void sendMessage(suggestion)}
             disabled={loading}
             style={{
               border: '1px solid var(--surface-border)',
@@ -738,7 +765,7 @@ export default function ChatbotPanel({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          sendMessage(input);
+          void sendMessage(input);
         }}
         style={{
           display: 'flex',

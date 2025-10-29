@@ -3,24 +3,26 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getRun } from '../dataStore';
-import type { DeliverableRunRecord, ArtifactKind, DeliverableJobResult } from '../types';
+import type { ArtifactKind, DeliverableJobResult, DeliverableRunRecord } from '../types';
 import { computeKeywords, countWords, parseArtifact } from './parsers';
 import {
   getAiInsightsTimeoutMs,
+  getEmbeddingsModel,
+  getModelGeneration,
   getOpenAiApiKey,
+  getPromptPackVersion,
   isAiInsightsEnabled,
-  isRedactionEnabled
+  isRedactionEnabled,
+  getModelGeneration,
+  getPromptPackVersion,
+  getEmbeddingsModel
 } from './config';
 import { getRedactionPatterns, maybeRedactText } from './redact';
 import type { AiInsight, BaseInsight, InsightBundle } from './types';
-import {
-  LLM_TEXT_MODEL,
-  assertAiMetadata,
-  withAiTags
-} from '../../../src/shared/aiConfig';
-import { getPromptTemplate, renderPromptTemplate } from '../../prompts/loader';
+import { assertAiRuntimeReady, getAiRuntimeConfig } from '../config/aiRuntime';
+import { getPromptPack } from '../prompts';
 
-const INSIGHTS_VERSION = 1;
+const INSIGHTS_VERSION = 2;
 
 const runCache = new Map<string, DeliverableRunRecord>();
 
@@ -70,11 +72,38 @@ export async function loadInsightBundle(runId: string): Promise<InsightBundle | 
   try {
     const filePath = getBundlePath(runId);
     const raw = await fs.readFile(filePath, 'utf8');
-    const parsed = JSON.parse(raw) as InsightBundle;
+    const parsed = JSON.parse(raw) as Partial<InsightBundle> & { metadata?: Partial<InsightBundle['metadata']> };
     if (!parsed || typeof parsed !== 'object') {
       return null;
     }
-    return parsed;
+    const baseMetadata = (parsed.metadata ?? {}) as Partial<InsightBundle['metadata']>;
+    const normalisedMetadata = {
+      modelGeneration: baseMetadata.modelGeneration ?? 'legacy',
+      promptPackVersion: baseMetadata.promptPackVersion ?? 'legacy',
+      embeddingsModel: baseMetadata.embeddingsModel ?? 'legacy',
+      updatedAt: baseMetadata.updatedAt ?? Date.now(),
+      aiModel: baseMetadata.aiModel
+    } satisfies InsightBundle['metadata'];
+
+    const bundle: InsightBundle = {
+      runId: parsed.runId ?? runId,
+      createdAt: parsed.createdAt ?? Date.now(),
+      base: parsed.base ?? {},
+      ai: parsed.ai ?? undefined,
+      version: parsed.version ?? 0,
+      metadata: normalisedMetadata
+    };
+
+    if (bundle.ai) {
+      for (const insight of Object.values(bundle.ai)) {
+        if (!insight) continue;
+        insight.modelGeneration = insight.modelGeneration ?? normalisedMetadata.modelGeneration;
+        insight.promptPackVersion = insight.promptPackVersion ?? normalisedMetadata.promptPackVersion;
+        insight.updatedAt = insight.updatedAt ?? new Date(normalisedMetadata.updatedAt).toISOString();
+      }
+    }
+
+    return bundle;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
@@ -192,11 +221,18 @@ export async function buildBaseInsights(
     base[result.id] = insight;
   }
 
+  const now = Date.now();
   const bundle: InsightBundle = {
     runId: run.runId,
-    createdAt: Date.now(),
+    createdAt: now,
     base,
-    version: INSIGHTS_VERSION
+    version: INSIGHTS_VERSION,
+    metadata: {
+      modelGeneration: getModelGeneration(),
+      promptPackVersion: getPromptPackVersion(),
+      embeddingsModel: getEmbeddingsModel(),
+      updatedAt: now
+    }
   };
 
   await saveInsightBundle(bundle);
@@ -213,17 +249,46 @@ function clampConfidence(value: unknown): number | undefined {
   return value;
 }
 
-function buildAiPrompt(base: BaseInsight, excerpt: string, redactionEnabled: boolean): string {
-  return renderPromptTemplate('insights.user', {
-    ARTIFACT_ID: base.artifactId,
-    TITLE: base.title ?? 'Unknown',
-    COURSE_GUESS: base.detectedCourseId ?? '',
-    ASSIGNMENT_GUESS: base.detectedAssignmentId ?? '',
-    KEYWORDS: (base.keywords ?? []).join(', '),
-    WARNINGS: (base.warnings ?? []).join(', '),
-    REDACTION_STATE: redactionEnabled ? 'masked' : 'off',
-    EXCERPT: excerpt || '[unavailable]'
+function renderTemplate(template: string, context: Record<string, unknown>): string {
+  return template.replace(/\{\{(.*?)\}\}/g, (_, key: string) => {
+    const value = context[key.trim()];
+    if (value === undefined || value === null) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    return JSON.stringify(value);
   });
+}
+
+function buildAiPrompt(base: BaseInsight, excerpt: string, redactionEnabled: boolean): {
+  system: string;
+  user: string;
+} {
+  const promptPack = getPromptPack();
+  const artifactJson = {
+    artifactId: base.artifactId,
+    kind: base.kind,
+    title: base.title,
+    detectedCourseId: base.detectedCourseId,
+    detectedAssignmentId: base.detectedAssignmentId,
+    keywords: base.keywords ?? [],
+    wordCount: base.wordCount,
+    pageCount: base.pageCount,
+    warnings: base.warnings ?? [],
+    redaction: redactionEnabled ? 'masked' : 'off'
+  };
+
+  const context = {
+    artifactJson,
+    excerpt: excerpt || '[unavailable]'
+  } as Record<string, unknown>;
+
+  return {
+    system: promptPack.insights.system,
+    user: renderTemplate(promptPack.insights.user, context)
+  };
 }
 
 async function requestAiInsight(
@@ -240,7 +305,8 @@ async function requestAiInsight(
     return null;
   }
 
-  assertAiMetadata();
+  assertAiRuntimeReady();
+  const runtime = getAiRuntimeConfig();
   const prompt = buildAiPrompt(base, excerpt, isRedactionEnabled());
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -250,16 +316,16 @@ async function requestAiInsight(
         Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: LLM_TEXT_MODEL,
+        model: runtime.chatModel,
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content: getPromptTemplate('insights.system')
+            content: prompt.system
           },
           {
             role: 'user',
-            content: prompt
+            content: prompt.user
           }
         ]
       }),
@@ -306,13 +372,16 @@ async function requestAiInsight(
 
     const confidence = clampConfidence((parsed as { confidence?: unknown }).confidence);
 
-    const insight: AiInsight = withAiTags({
+    const insight: AiInsight = {
       artifactId: base.artifactId,
       summary,
       actionItems,
       confidence,
-      model: typeof payload.model === 'string' ? payload.model : LLM_TEXT_MODEL
-    });
+      model: typeof payload.model === 'string' ? payload.model : runtime.chatModel,
+      modelGeneration: getModelGeneration(),
+      promptPackVersion: getPromptPackVersion(),
+      updatedAt: new Date().toISOString()
+    };
 
     return insight;
   } catch (error) {
@@ -352,6 +421,7 @@ export async function buildAiInsights(
   if (!isAiInsightsEnabled() || !getOpenAiApiKey()) {
     return bundle;
   }
+  const runtime = getAiRuntimeConfig();
   let run = runCache.get(runId);
   if (!run) {
     const fetched = await getRun(runId);
@@ -366,6 +436,13 @@ export async function buildAiInsights(
 
   const timeout = getAiInsightsTimeoutMs();
   const aiResults: Record<string, AiInsight> = { ...(bundle.ai ?? {}) };
+  for (const insight of Object.values(aiResults)) {
+    if (!insight) continue;
+    insight.modelGeneration = insight.modelGeneration ?? getModelGeneration();
+    insight.promptPackVersion = insight.promptPackVersion ?? getPromptPackVersion();
+    insight.model = insight.model ?? runtime.chatModel;
+    insight.updatedAt = insight.updatedAt ?? new Date(bundle.metadata.updatedAt).toISOString();
+  }
 
   for (const base of Object.values(bundle.base)) {
     const matching = run.results.find((entry) => entry.id === base.artifactId && entry.success);
@@ -400,10 +477,16 @@ export async function buildAiInsights(
     }
   }
 
-  if (Object.keys(aiResults).length > 0) {
+  const hasAiResults = Object.keys(aiResults).length > 0;
+  if (hasAiResults) {
     bundle.ai = aiResults;
-    await saveInsightBundle(bundle);
   }
+  bundle.metadata.modelGeneration = getModelGeneration();
+  bundle.metadata.promptPackVersion = getPromptPackVersion();
+  bundle.metadata.embeddingsModel = getEmbeddingsModel();
+  bundle.metadata.aiModel = runtime.chatModel;
+  bundle.metadata.updatedAt = Date.now();
+  await saveInsightBundle(bundle);
 
   return bundle;
 }

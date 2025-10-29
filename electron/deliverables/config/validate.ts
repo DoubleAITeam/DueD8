@@ -1,3 +1,5 @@
+import { getAiRuntimeConfig } from './aiRuntime';
+
 type EnvSource = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
 type NumberParseMode = 'int' | 'float';
@@ -52,6 +54,13 @@ export interface DeliverablesConfig {
   };
   ai: {
     openAiApiKey: string | null;
+    modelGeneration: string;
+    promptPackVersion: string;
+    textModel: string;
+    chatModel: string;
+    embeddingsModel: string;
+    badgeLabel: string;
+    regenerationBanner: string;
   };
   os: {
     allowExternalMove: boolean;
@@ -304,6 +313,7 @@ export function loadConfig(env: EnvSource = process.env): ConfigValidationResult
   const redact = coerceBoolean(env, 'DELIV_INSIGHTS_REDACT', DEFAULTS.insights.redact, issues);
 
   const openAiApiKey = resolveOpenAiKey(env, issues);
+  const runtime = getAiRuntimeConfig();
 
   const config: DeliverablesConfig = {
     timeouts: {
@@ -335,7 +345,14 @@ export function loadConfig(env: EnvSource = process.env): ConfigValidationResult
       aiTimeoutMs: aiInsightsTimeout
     },
     ai: {
-      openAiApiKey
+      openAiApiKey,
+      modelGeneration: runtime.modelGeneration,
+      promptPackVersion: runtime.promptPackVersion,
+      textModel: runtime.textModel,
+      chatModel: runtime.chatModel,
+      embeddingsModel: runtime.embeddingsModel,
+      badgeLabel: runtime.badgeLabel,
+      regenerationBanner: runtime.regenerationBanner
     },
     os: {
       allowExternalMove

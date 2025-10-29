@@ -1,6 +1,5 @@
 // state/store.ts
 import { create } from 'zustand';
-import type { AiResetState } from '../../shared/aiConfig';
 
 export type Profile = {
   name?: string;
@@ -31,14 +30,12 @@ type AppState = {
   view: ViewState;
   assignmentContexts: Record<number, AssignmentContextEntry[]>;
   chatbotMinimized: boolean;
-  aiResetState: AiResetState | null;
   setConnected: (v: boolean) => void;
   setProfile: (p: Profile | null) => void;
   setToast: (message: string | null) => void;
   setView: (view: ViewState) => void;
   appendAssignmentContext: (assignmentId: number, entries: AssignmentContextEntry[]) => void;
   setChatbotMinimized: (value: boolean) => void;
-  setAiResetState: (state: AiResetState | null) => void;
 };
 
 export const useStore = create<AppState>((set) => ({
@@ -48,7 +45,6 @@ export const useStore = create<AppState>((set) => ({
   view: { screen: 'dashboard' },
   assignmentContexts: {},
   chatbotMinimized: false,
-  aiResetState: null,
   setConnected: (v) => set({ connected: v }),
   setProfile: (profile) => set({ profile }),
   setToast: (toast) => set({ toast }),
@@ -81,6 +77,5 @@ export const useStore = create<AppState>((set) => ({
         })()
       }
     })),
-  setChatbotMinimized: (value) => set({ chatbotMinimized: value }),
-  setAiResetState: (state) => set({ aiResetState: state })
+  setChatbotMinimized: (value) => set({ chatbotMinimized: value })
 }));

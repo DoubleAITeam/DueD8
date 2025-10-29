@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Navigate, RouterView } from './router';
 import DashboardNew from '../pages/DashboardNew';
 import LegacyDashboard from '../pages/Dashboard';
 import AssignmentsPage from '../pages/Assignments';
@@ -14,20 +15,21 @@ import ChatbotPage from '../pages/ChatbotPage';
 import SettingsPage from '../pages/Settings';
 import Analytics from '../pages/Analytics';
 import AnalyticsPrototype from '../pages/AnalyticsPrototype';
-import { Router, Navigate } from './router';
 import { useFeatureFlags } from '../state/dashboard';
-import { useStore } from '../state/store';
-import { AI_RESET_BANNER_MESSAGE, isAiActionBlocked } from '../../shared/aiConfig';
+import { useAiRuntimeState, selectAiBannerMessage, selectIsAiFrozen } from '../state/ai';
 
-const placeholder = (title: string) => <Placeholder title={title} />;
+const placeholder = (title: string, options?: { ai?: boolean }) => (
+  <Placeholder title={title} aiEnabled={options?.ai} />
+);
 
 export function AppRoutes() {
   const { featureFlags } = useFeatureFlags();
   const isNewDashboard = featureFlags.newDashboard;
-  const aiResetState = useStore((s) => s.aiResetState);
-  const aiBlocked = isAiActionBlocked(aiResetState);
+  const isAiFrozen = useAiRuntimeState(selectIsAiFrozen);
+  const aiBannerMessage = useAiRuntimeState(selectAiBannerMessage);
 
-  const gated = (element: JSX.Element) => (aiBlocked ? <AiFeatureDisabled message={aiResetState?.bannerMessage} /> : element);
+  const gated = (element: JSX.Element) =>
+    isAiFrozen ? <AiFeatureDisabled message={aiBannerMessage} /> : element;
 
   const routes = useMemo(
     () => [
@@ -40,8 +42,8 @@ export function AppRoutes() {
       { path: '/study-tools', element: <Navigate to="/study-tools/ai-writer" /> },
       { path: '/study-tools/ai-writer', element: gated(<AiWriter />) },
       { path: '/study-tools/notes', element: <NoteLibrary /> },
-      { path: '/study-tools/flashcards', element: gated(placeholder('Flashcards')) },
-      { path: '/study-tools/quiz-generator', element: gated(placeholder('Quiz Generator')) },
+      { path: '/study-tools/flashcards', element: placeholder('Flashcards', { ai: true }) },
+      { path: '/study-tools/quiz-generator', element: placeholder('Quiz Generator', { ai: true }) },
       { path: '/grades', element: <GradesPage /> },
       { path: '/analytics', element: <Analytics /> },
       { path: '/analytics/prototype', element: <AnalyticsPrototype /> },
@@ -55,13 +57,14 @@ export function AppRoutes() {
       { path: '/logout', element: placeholder('Logout') },
       { path: '*', element: <Navigate to={isNewDashboard ? '/dashboard' : '/dashboard/legacy'} /> }
     ],
-    [aiBlocked, aiResetState?.bannerMessage, isNewDashboard]
+    [aiBannerMessage, isAiFrozen, isNewDashboard]
   );
 
-  return <Router routes={routes} />;
+  return <RouterView routes={routes} />;
 }
 
-function AiFeatureDisabled({ message }: { message?: string }) {
+function AiFeatureDisabled({ message }: { message: string }) {
+  const resolved = message || 'AI is regenerating. Please wait until green.';
   return (
     <div
       style={{
@@ -75,9 +78,7 @@ function AiFeatureDisabled({ message }: { message?: string }) {
       }}
     >
       <h2 style={{ marginBottom: '0.75rem' }}>AI temporarily unavailable</h2>
-      <p style={{ maxWidth: 420, color: 'var(--text-secondary)' }}>
-        {message || AI_RESET_BANNER_MESSAGE}
-      </p>
+      <p style={{ maxWidth: 420, color: 'var(--text-secondary)' }}>{resolved}</p>
     </div>
   );
 }

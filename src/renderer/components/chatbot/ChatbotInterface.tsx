@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChatbotStore } from '../../state/chatbot';
 import { useDashboardStore, useDashboardData } from '../../state/dashboard';
+import { useAiRuntimeState, selectIsAiFrozen } from '../../state/ai';
 import ChatSidebar from './ChatSidebar';
 import ChatMain from './ChatMain';
 import ChatRightPanel from './ChatRightPanel';
@@ -13,6 +14,7 @@ export default function ChatbotInterface() {
     const [showRightPanel, setShowRightPanel] = useState(true);
 
     const currentSession = currentSessionId ? sessions[currentSessionId] : null;
+    const aiFrozen = useAiRuntimeState(selectIsAiFrozen);
 
     // Load dashboard data to get courses
     useDashboardData();
@@ -43,29 +45,32 @@ export default function ChatbotInterface() {
             background: 'var(--surface-border)'
           }}
         >
-          <ChatSidebar 
+          <ChatSidebar
             currentSessionId={currentSessionId}
             sessions={sessions}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             courses={rawCourses || []}
+            aiFrozen={aiFrozen}
           />
-          
-          <ChatMain 
+
+          <ChatMain
             session={currentSession}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             courses={rawCourses || []}
+            aiFrozen={aiFrozen}
           />
-          
+
           {showRightPanel && (
-            <ChatRightPanel 
+            <ChatRightPanel
               onClose={() => setShowRightPanel(false)}
               selectedModel={selectedModel}
               onPromptClick={(prompt) => {
                 // This would be handled by the ChatMain component
                 console.log('Prompt clicked:', prompt);
               }}
+              aiFrozen={aiFrozen}
             />
           )}
         </div>

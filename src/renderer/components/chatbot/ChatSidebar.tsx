@@ -9,34 +9,40 @@ type ChatSidebarProps = {
   selectedModel: AIModel;
   onModelChange: (model: AIModel) => void;
   courses: any[];
+  aiFrozen: boolean;
 };
 
-export default function ChatSidebar({ 
-  currentSessionId, 
-  sessions, 
-  selectedModel, 
+export default function ChatSidebar({
+  currentSessionId,
+  sessions,
+  selectedModel,
   onModelChange,
-  courses 
+  courses,
+  aiFrozen
 }: ChatSidebarProps) {
   const { createSession, deleteSession, selectSession, updateSessionTitle } = useChatbotStore();
   const [editingSessionId, setEditingSessionId] = React.useState<string | null>(null);
   const [editingTitle, setEditingTitle] = React.useState('');
 
   const handleNewChat = () => {
+    if (aiFrozen) return;
     createSession();
   };
 
   const handleSessionSelect = (sessionId: string) => {
+    if (aiFrozen) return;
     selectSession(sessionId);
   };
 
   const handleSessionDelete = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
+    if (aiFrozen) return;
     deleteSession(sessionId);
   };
 
   const handleEditStart = (e: React.MouseEvent, session: ChatSession) => {
     e.stopPropagation();
+    if (aiFrozen) return;
     setEditingSessionId(session.id);
     setEditingTitle(session.title);
   };
@@ -155,6 +161,7 @@ export default function ChatSidebar({
           <button
             className={`model-toggle__option ${selectedModel === 'basic' ? 'active' : ''}`}
             onClick={() => onModelChange('basic')}
+            disabled={aiFrozen}
             style={{
               flex: 1,
               padding: '8px 12px',
@@ -164,7 +171,7 @@ export default function ChatSidebar({
               fontSize: '13px',
               fontWeight: '500',
               borderRadius: '6px',
-              cursor: 'pointer',
+              cursor: aiFrozen ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s ease'
             }}
           >
@@ -173,6 +180,7 @@ export default function ChatSidebar({
           <button
             className={`model-toggle__option ${selectedModel === 'advanced' ? 'active' : ''}`}
             onClick={() => onModelChange('advanced')}
+            disabled={aiFrozen}
             style={{
               flex: 1,
               padding: '8px 12px',
@@ -182,7 +190,7 @@ export default function ChatSidebar({
               fontSize: '13px',
               fontWeight: '500',
               borderRadius: '6px',
-              cursor: 'pointer',
+              cursor: aiFrozen ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s ease'
             }}
           >
@@ -219,23 +227,24 @@ export default function ChatSidebar({
           >
             Recent Chats
           </h3>
-          <button 
-            className="new-chat-btn" 
-            onClick={handleNewChat}
-            style={{
-              background: 'var(--button-primary-bg)',
-              color: 'var(--button-primary-text)',
-              border: 'none',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background 0.2s ease',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
+        <button
+          className="new-chat-btn"
+          onClick={handleNewChat}
+          disabled={aiFrozen}
+          style={{
+            background: 'var(--button-primary-bg)',
+            color: 'var(--button-primary-text)',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '6px 12px',
+            fontSize: '12px',
+            fontWeight: '500',
+            cursor: aiFrozen ? 'not-allowed' : 'pointer',
+            transition: 'background 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
           >
             <PlusIcon size={14} />
             New Chat
@@ -250,6 +259,7 @@ export default function ChatSidebar({
                 key={session.id}
                 className={`session-item ${currentSessionId === session.id ? 'active' : ''}`}
                 onClick={() => handleSessionSelect(session.id)}
+                style={aiFrozen ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
               >
                 <div className="session-item__content">
                   {editingSessionId === session.id ? (
@@ -277,6 +287,7 @@ export default function ChatSidebar({
                     className="session-item__action"
                     onClick={(e) => handleEditStart(e, session)}
                     title="Rename chat"
+                    disabled={aiFrozen}
                   >
                     <EditIcon size={14} />
                   </button>
@@ -284,6 +295,7 @@ export default function ChatSidebar({
                     className="session-item__action"
                     onClick={(e) => handleSessionDelete(e, session.id)}
                     title="Delete chat"
+                    disabled={aiFrozen}
                   >
                     <TrashIcon size={14} />
                   </button>

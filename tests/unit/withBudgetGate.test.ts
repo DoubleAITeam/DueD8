@@ -45,7 +45,9 @@ beforeEach(async () => {
       setCap: vi.fn(),
       reset: vi.fn(),
       refreshPlan: vi.fn(),
-      getProBullets: vi.fn(),
+      checkAndReserve: vi.fn(),
+      release: vi.fn(),
+      getProFeatures: vi.fn(),
       onChanged: vi.fn(),
       onBlocked: vi.fn()
     }
@@ -59,7 +61,10 @@ beforeEach(async () => {
     plan: 'FREE',
     isOverCap: false,
     lastNotifiedAt: null,
-    upgradeModalOpen: false
+    upgradeModalOpen: false,
+    upgradeModalSource: null,
+    upgradeModalUsage: null,
+    upgradeModalLimit: null
   });
 });
 

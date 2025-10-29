@@ -7,7 +7,6 @@ import type {
   SearchCardsResult,
   SourceAsset
 } from '../shared/flashcards';
-import type { AiResetState } from '../shared/aiConfig';
 import type {
   ArtifactInput,
   ArtifactKind,
@@ -19,7 +18,9 @@ import type { AdapterOverviewEntry } from '../../electron/deliverables/renderers
 import type { ZipResult } from '../../electron/deliverables/archive';
 import type { RetentionConfig, RetentionSweepResult } from '../../electron/deliverables/retention';
 import type { InsightBundle } from '../../electron/deliverables/insights/types';
+import type { AiResetState } from '../../electron/deliverables/reset/state';
 import type { BudgetState } from '../../electron/tokenBudget';
+import type { AIStartRequest, AIStreamEvent } from '../shared/types/ai';
 
 export {};
 
@@ -62,6 +63,7 @@ declare global {
       invoke(
         channel: 'deliverables:getInsightRedactionInfo'
       ): Promise<{ enabled: boolean; patterns: string[] }>;
+      invoke(channel: 'deliverables:getAiResetState'): Promise<AiResetState>;
       invoke(channel: 'deliverables:revealInFolder', targetPath: string): Promise<boolean>;
       invoke(channel: 'deliverables:openPath', targetPath: string): Promise<{ ok: boolean; message?: string }>;
       invoke(channel: 'deliverables:moveToTrash', targetPath: string): Promise<{ ok: boolean; message?: string }>;
@@ -173,9 +175,21 @@ declare global {
         setCap(cap: number): Promise<BudgetState>;
         reset(): Promise<BudgetState>;
         refreshPlan(): Promise<BudgetState>;
-        getProBullets(): Promise<string[]>;
+        checkAndReserve(cost: number): Promise<{ ok: boolean; used: number; limit: number }>;
+        release(cost: number): Promise<BudgetState>;
+        consume(amount: number): Promise<BudgetState>;
+        getProFeatures(): Promise<string[]>;
         onChanged(listener: (state: BudgetState) => void): () => void;
         onBlocked(listener: (state: BudgetState) => void): () => void;
+      };
+      ai: {
+        chat: {
+          start(payload: AIStartRequest): void;
+          onEvent(messageId: string, listener: (event: AIStreamEvent) => void): () => void;
+        };
+        paywall: {
+          onOpen(listener: () => void): () => void;
+        };
       };
     };
   }

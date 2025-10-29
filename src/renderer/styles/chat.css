@@ -1,0 +1,115 @@
+.chatbot-root {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  background: var(--surface-background);
+  color: var(--text-primary);
+}
+
+.chatbot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface-card);
+}
+
+.chatbot-body {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chatbot-metadata {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chatbot-message-list {
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chatbot-message {
+  max-width: 720px;
+  padding: 16px;
+  border-radius: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chatbot-message.user {
+  align-self: flex-end;
+  background: var(--surface-highlight);
+  color: var(--text-primary);
+}
+
+.chatbot-message.assistant {
+  align-self: flex-start;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+}
+
+.chatbot-composer {
+  border-top: 1px solid var(--surface-border);
+  padding: 16px 24px;
+  background: var(--surface-card);
+}
+
+.chatbot-composer textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-background);
+  color: var(--text-primary);
+}
+
+.chatbot-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.chatbot-composer button {
+  padding: 10px 16px;
+  background: var(--brand-primary);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chatbot-composer button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chatbot-citations {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chatbot-citation-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-pill);
+  border: 1px solid var(--surface-border);
+}

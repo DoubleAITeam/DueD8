@@ -4,7 +4,7 @@ import ChatbotInterface from '../components/chatbot/ChatbotInterface';
 
 export default function ChatbotPage() {
   return (
-    <AppShell pageTitle="AI Study Assistant">
+    <AppShell pageTitle="AI Study Assistant" showAiBadge enableAiFreezeOverlay>
       <ChatbotInterface />
     </AppShell>
   );

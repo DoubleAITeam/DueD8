@@ -371,6 +371,21 @@ export default function StudyGuidePanel({
     return [{ id: 'overview', title: 'Overview' }, ...plan.sections.map((section) => ({ id: section.id, title: section.title }))];
   }, [plan]);
 
+  const isLoading = status === 'generating';
+
+  const buildPrimaryButtonClass = (variant: 'accent' | 'secondary') => {
+    const classes = ['study-guide-primary-button'];
+    if (variant === 'accent') {
+      classes.push('study-guide-primary-button--accent');
+    } else {
+      classes.push('study-guide-primary-button--secondary');
+    }
+    if (isLoading) {
+      classes.push('is-loading');
+    }
+    return classes.join(' ');
+  };
+
   return (
     <div className="study-guide-container">
       <div className="study-guide-actions">
@@ -405,8 +420,13 @@ export default function StudyGuidePanel({
                 Generate a personalised walkthrough with our Study Coach. It blends instructor materials and your uploads into a
                 single plan.
               </p>
-              <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
-                {status === 'generating' ? 'Generating…' : 'Generate guide'}
+              <button
+                type="button"
+                onClick={onGenerate}
+                disabled={!canGenerate || isLoading}
+                className={buildPrimaryButtonClass('accent')}
+              >
+                {isLoading ? 'Generating…' : 'Generate guide'}
               </button>
               {tokenEstimate ? <AiTokenBadge category="generate" tokens={tokenEstimate} /> : null}
               {error ? <div className="study-guide-error">{error}</div> : null}
@@ -417,8 +437,13 @@ export default function StudyGuidePanel({
                 <h2>{plan.heading}</h2>
                 <MarkdownBlock markdown={plan.overview} />
                 <div className="study-guide-utility">
-                  <button type="button" onClick={onGenerate} disabled={!canGenerate || status === 'generating'}>
-                    {status === 'generating' ? 'Regenerating…' : 'Regenerate guide'}
+                  <button
+                    type="button"
+                    onClick={onGenerate}
+                    disabled={!canGenerate || isLoading}
+                    className={buildPrimaryButtonClass('secondary')}
+                  >
+                    {isLoading ? 'Regenerating…' : 'Regenerate guide'}
                   </button>
                   {tokenEstimate ? <AiTokenBadge category="generate" tokens={tokenEstimate} /> : null}
                   {status === 'generating' && progress ? (
@@ -438,7 +463,16 @@ export default function StudyGuidePanel({
                     <section key={section.id} id={section.id} className="study-guide-section">
                       <div className="study-guide-section-header">
                         <h3>{section.title}</h3>
-                        <button type="button" onClick={() => toggleSection(section.id)}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSection(section.id)}
+                          className="study-guide-section-toggle"
+                          aria-expanded={!isCollapsed}
+                          data-collapsed={isCollapsed}
+                        >
+                          <span aria-hidden="true" className="study-guide-section-toggle-icon">
+                            {isCollapsed ? '+' : '−'}
+                          </span>
                           {isCollapsed ? 'Expand' : 'Collapse'}
                         </button>
                       </div>

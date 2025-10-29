@@ -6,9 +6,10 @@ type ChatRightPanelProps = {
   onClose: () => void;
   selectedModel: AIModel;
   onPromptClick?: (prompt: string) => void;
+  aiFrozen: boolean;
 };
 
-export default function ChatRightPanel({ onClose, selectedModel, onPromptClick }: ChatRightPanelProps) {
+export default function ChatRightPanel({ onClose, selectedModel, onPromptClick, aiFrozen }: ChatRightPanelProps) {
   const basicPrompts = [
     "Explain this concept in simple terms",
     "Help me understand the main points",
@@ -69,6 +70,7 @@ export default function ChatRightPanel({ onClose, selectedModel, onPromptClick }
                 key={index}
                 className="prompt-item"
                 onClick={() => onPromptClick?.(prompt)}
+                disabled={aiFrozen}
               >
                 {prompt}
               </button>

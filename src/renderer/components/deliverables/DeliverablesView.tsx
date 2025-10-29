@@ -37,6 +37,8 @@ import {
   type InsightCorrectionPatch
 } from '../../utils/deliverables';
 import { withBudgetGate } from '../../utils/withBudgetGate';
+import { AiGenerationBadge } from '../ai/AiGenerationBadge';
+import { useAiRuntimeState, selectAiBannerMessage, selectIsAiFrozen } from '../../state/ai';
 import type { AiInsight, BaseInsight, InsightBundle } from '../../../../electron/deliverables/insights/types';
 import type { RetentionSweepResult } from '../../../../electron/deliverables/retention';
 
@@ -177,6 +179,8 @@ export function DeliverablesView() {
   const [storagePaths, setStoragePaths] = useState<StoragePaths | null>(null);
   const [retentionPlan, setRetentionPlan] = useState<RetentionSweepResult | null>(null);
   const [isRunningRetention, setIsRunningRetention] = useState(false);
+  const isAiFrozen = useAiRuntimeState(selectIsAiFrozen);
+  const aiBannerMessage = useAiRuntimeState(selectAiBannerMessage);
   const [insightBundle, setInsightBundle] = useState<InsightBundle | null>(null);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [isBuildingBaseInsights, setIsBuildingBaseInsights] = useState(false);
@@ -1001,6 +1005,10 @@ export function DeliverablesView() {
 
   return (
     <div className="deliverables-view">
+      <div className="deliverables-ai-status">
+        <AiGenerationBadge />
+        {isAiFrozen ? <span className="deliverables-ai-status__message">{aiBannerMessage}</span> : null}
+      </div>
       <h2>Deliverables Pipeline</h2>
 
       <label className="deliverables-input">
@@ -1014,15 +1022,15 @@ export function DeliverablesView() {
       </label>
 
       <div className="deliverables-actions">
-        <button type="button" onClick={handleDiscoverAndRun} disabled={isRunning}>
-          {isRunning ? 'Running…' : 'Discover and Run'}
+        <button type="button" onClick={handleDiscoverAndRun} disabled={isRunning || isAiFrozen}>
+          {isRunning ? 'Running…' : isAiFrozen ? 'Frozen during AI reset' : 'Discover and Run'}
         </button>
         <label className="deliverables-dry-run">
           <input
             type="checkbox"
             checked={dryRun}
             onChange={(event) => setDryRun(event.target.checked)}
-            disabled={isRunning}
+            disabled={isRunning || isAiFrozen}
           />
           Dry run
         </label>

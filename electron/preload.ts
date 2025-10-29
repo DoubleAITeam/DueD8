@@ -1,5 +1,6 @@
 // electron/preload.ts
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AIStartRequest, AIStreamEvent, AIStreamEnvelope } from '../src/shared/types/ai';
 import type {
   ArtifactInput,
   ArtifactKind,
@@ -9,6 +10,7 @@ import type {
 import type { CourseContext, Rule } from './deliverables/postprocess/types';
 import type { ZipResult } from './deliverables/archive';
 import type { RetentionConfig, RetentionSweepResult } from './deliverables/retention';
+import type { AiResetState } from './deliverables/reset/state';
 
 type PipelineInvokeOptions = {
   concurrency?: number;
@@ -39,6 +41,7 @@ type ElectronInvoke = {
     rules: Rule[]
   ): Promise<{ ok: boolean; message?: string }>;
   (channel: 'deliverables:resetRules'): Promise<Rule[]>;
+  (channel: 'deliverables:getAiResetState'): Promise<AiResetState>;
   <T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
 };
 
@@ -46,6 +49,39 @@ const invoke: ElectronInvoke = ((channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args)) as ElectronInvoke;
 
 console.log('[preload] loaded');
+
+const chatEventListeners = new Map<string, Set<(event: AIStreamEvent) => void>>();
+const paywallListeners = new Set<() => void>();
+
+ipcRenderer.on('ai.chat.stream', (_event, payload: AIStreamEnvelope) => {
+  if (!payload?.messageId || !payload?.event) {
+    return;
+  }
+  const listeners = chatEventListeners.get(payload.messageId);
+  if (!listeners) {
+    return;
+  }
+  for (const listener of listeners) {
+    try {
+      listener(payload.event);
+    } catch (error) {
+      console.error('[preload] chat listener error', error);
+    }
+  }
+  if (payload.event.type === 'final' || payload.event.type === 'error') {
+    chatEventListeners.delete(payload.messageId);
+  }
+});
+
+ipcRenderer.on('ui/paywall:open', () => {
+  for (const listener of paywallListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('[preload] paywall listener error', error);
+    }
+  }
+});
 
 contextBridge.exposeInMainWorld('electron', {
   invoke
@@ -176,7 +212,10 @@ contextBridge.exposeInMainWorld('dued8', {
     setCap: (cap: number) => ipcRenderer.invoke('budget:setCap', cap),
     reset: () => ipcRenderer.invoke('budget:reset'),
     refreshPlan: () => ipcRenderer.invoke('budget:refreshPlan'),
-    getProBullets: () => ipcRenderer.invoke('wip:getProBullets'),
+    checkAndReserve: (cost: number) => ipcRenderer.invoke('budget:checkAndReserve', { cost }),
+    release: (cost: number) => ipcRenderer.invoke('budget:release', { cost }),
+    consume: (amount: number) => ipcRenderer.invoke('budget:consume', amount),
+    getProFeatures: () => ipcRenderer.invoke('pro:features'),
     onChanged: (listener: (state: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
       ipcRenderer.on('budget:changed', handler);
@@ -186,6 +225,32 @@ contextBridge.exposeInMainWorld('dued8', {
       const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
       ipcRenderer.on('budget:blocked', handler);
       return () => ipcRenderer.removeListener('budget:blocked', handler);
+    }
+  },
+  ai: {
+    chat: {
+      start: (payload: AIStartRequest) => ipcRenderer.send('ai.chat.start', payload),
+      onEvent: (messageId: string, listener: (event: AIStreamEvent) => void) => {
+        const listeners = chatEventListeners.get(messageId) ?? new Set();
+        listeners.add(listener);
+        chatEventListeners.set(messageId, listeners);
+        return () => {
+          const bucket = chatEventListeners.get(messageId);
+          if (!bucket) {
+            return;
+          }
+          bucket.delete(listener);
+          if (bucket.size === 0) {
+            chatEventListeners.delete(messageId);
+          }
+        };
+      }
+    },
+    paywall: {
+      onOpen: (listener: () => void) => {
+        paywallListeners.add(listener);
+        return () => paywallListeners.delete(listener);
+      }
     }
   }
 });

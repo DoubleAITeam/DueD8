@@ -23,3 +23,16 @@ export function assertBudgetAvailable(entrypoint: string): void {
   );
   throw new BudgetExceededError();
 }
+
+export function enforceHardStop(entrypoint: string): boolean {
+  const state = getBudgetState();
+  if (!state.isOverCap) {
+    return true;
+  }
+  trackTokenBudgetActionBlocked(entrypoint, state);
+  mainWarn(
+    'budget:hard_stop',
+    `Hard stop for ${entrypoint}; usage ${state.used}/${state.cap}.`
+  );
+  return false;
+}

@@ -29,6 +29,7 @@
     "electron",
     "electron.vite.config.mts",
     "vite.config.mts",
-    "scripts"
+    "scripts",
+    "packages"
   ]
 }

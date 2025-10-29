@@ -7,7 +7,10 @@ export default defineConfig({
     setupFiles: ["./src/setupTests.ts"],
     globals: true,
     css: true,
-    include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "tests/**/*.{test,spec}.{ts,tsx}",
+      "packages/**/*.{test,spec}.{ts,tsx}"
+    ],
     exclude: ["tests/e2e/**"]
   }
 });
